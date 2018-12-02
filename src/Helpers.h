@@ -150,6 +150,8 @@ void _check_gl_error(const char *file, int line);
 #define BUMPY_CUBE_OFF_PATH "../data/bumpy_cube.off"
 #define BUNNY_OFF_PATH "../data/bunny.off"
 #define CUBE_OFF_PATH "../data/cube.off"
+// #define CUBE_OFF_PATH "../data/cube_desk.off"
+#define BALL_OFF_PATH "../data/ball.off"
 #define CONE_OFF_PATH "../data/cone.off"
 #define WIREFRAME 0
 #define FLAT_SHADING 1
@@ -162,6 +164,7 @@ void _check_gl_error(const char *file, int line);
 #define DIST_MAX 10000.
 #define CILCK_ACTION 1
 #define RAY_ACTION 2
+#define ESP 1e-6
 
 bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXf &V, Eigen::MatrixXf &C, Eigen::VectorXi &IDX);
 Eigen::MatrixXf get_bounding_box(Eigen::MatrixXf V);

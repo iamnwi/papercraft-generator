@@ -377,6 +377,25 @@ class Mesh {
             return true;
         }
 };
+class Node {
+    public:
+        double weight;
+        std::pair<int, int> edge;
+        Mesh *parentMesh, *mesh;
+
+        Node(double weight, std::pair<int, int> edge, Mesh* pa, Mesh* mesh) {
+            this->weight = weight;
+            this->edge = edge;
+            this->parentMesh = pa;
+            this->mesh = mesh;
+        }
+};
+class CompareWeight {
+    public:
+        bool operator()(Node a, Node b) {
+            return a.weight < b.weight;
+        }
+};
 class FlattenObject {
     public:
         std::vector<Mesh*> meshes;
@@ -443,6 +462,30 @@ class FlattenObject {
             std::cout << "face #: " << meshes.size() << std::endl;
             std::cout << "edge #: " << edge2meshes.size() << std::endl;
 
+            // // store pair<edge len(weight), edge> into a vector, sort it then construt a max spaning tree
+            // std::vector<std::pair<double, std::pair<int, int> > > sortedEdge;
+            // for (auto item: edge2weight) {
+            //     auto edge = item.first;
+            //     double weight = item.second;
+            //     sortedEdge.push_back(make_pair(weight, edge));
+            // }
+
+            // sort(sortedEdge.begin(), sortedEdge.end());
+            // // need face#-1 edges
+            // std::set<Mesh*> visited;
+            // int edgeCnt = 0;
+            // for (int i = sortedEdge.size()-1; i >= 0; i--) {
+            //     if (edgeCnt >= meshes.size()-1) break;
+            //     auto edge = sortedEdge[i].second;
+            //     Mesh *m1 = edge2meshes[edge][0], *m2 = edge2meshes[edge][1];
+            //     // if (visited.find(m1) == visited.end() || visited.find(m2) == visited.end()) {
+            //         m1->nebMeshes.push_back(std::make_pair(m2, edge));
+            //         m2->nebMeshes.push_back(std::make_pair(m1, edge));
+            //         visited.insert(m1); visited.insert(m2);
+            //         edgeCnt++;
+            //     // }
+            // }
+
             // add edge field to mesh objects
             for (auto mesh: meshes) {
                 int v1 = mesh->vids[0], v2 = mesh->vids[1], v3 = mesh->vids[2];
@@ -453,37 +496,59 @@ class FlattenObject {
             }
 
             std::cout << "created meshes to nebs" << std::endl;
+            std::cout << "check connect" << std::endl;
+            for (auto mesh: meshes) {
+                for(auto meshNedge: mesh->nebMeshes) {
+                    Mesh* nebMesh = meshNedge.first;
+                    std::cout << mesh->id << " -> " << nebMesh->id << std::endl;
+                }
+            }
 
             // BFS
-            std::queue<Mesh*> q;
+            // pq(edge weight, parent mesh, cur mesh)
+            std::priority_queue<Node, std::vector<Node>, CompareWeight> pq;
             std::set<Mesh*> flattened;
+            std::set<Mesh*> inqueue;
+            std::vector<double> dist(meshes.size(), 0.);
 
             // flat first mesh
             flattenFirst(meshes[0], flattened);
             flattened.insert(meshes[0]);
-            q.push(meshes[0]);
+            dist[meshes[0]->id] = DIST_MAX;
+            pq.push(Node(DIST_MAX, std::make_pair(0,0), nullptr, meshes[0]));
             std::cout << "flattened first mesh" << std::endl;
             // std::cout << "mesh flat V" << std::endl;
             // std::cout << meshes[0]->getFlatV() << std::endl;
             
-            while (!q.empty()) {
-                Mesh* curMesh = q.front();
-                q.pop();
-                for(auto meshNedge: curMesh->nebMeshes) {
+            // max spanning tree, prime algorithm
+            while (flattened.size() < meshes.size()) {
+                auto node = pq.top();
+                pq.pop();
+                for(auto meshNedge: node.mesh->nebMeshes) {
                     Mesh* nebMesh = meshNedge.first;
                     auto edge = meshNedge.second;
-                    if (flattened.find(nebMesh) == flattened.end() && flattenMesh(curMesh, nebMesh, edge, flattened)) {
-                        // std::cout << "inqueue " << nebMesh->id << std::endl;
-                        flattened.insert(nebMesh);
-                        q.push(nebMesh);
+                    if (flattened.find(nebMesh) == flattened.end()) {
+                        std::cout << "inqueue " << nebMesh->id << std::endl;
+                        pq.push(Node(edge2weight[edge], edge, node.mesh, nebMesh));
                     }
                 }
+                while (flattened.find(pq.top().mesh) != flattened.end())
+                    pq.pop();
+                node = pq.top();
+                std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
+                std::cout << "edge: " << node.edge.first << "-" << node.edge.second << std::endl;
+                std::cout << "pre mesh flat V" << node.parentMesh->getFlatV() << std::endl;
+                flattenMesh(node.parentMesh, node.mesh, node.edge, flattened);
+                flattened.insert(node.mesh);
+                std::cout << "mesh " << node.mesh->id << " flat V" << std::endl;
+                std::cout << node.mesh->getFlatV() << std::endl;
             }
 
             std::cout << "finished flattening" << std::endl;
             // std::cout << "flattened " << flattened.size() << " meshes" << std::endl;
             // std::cout << this->V << std::endl;
             for (auto mesh: meshes) {
+                std::cout << mesh->id << std::endl;
                 mesh->updateVBOP();
             }
         }
@@ -523,7 +588,7 @@ class FlattenObject {
             float v1v3Len = (v3Pos - v1Pos).norm();
             float v2v3Len = (v3Pos - v2Pos).norm();
 
-            // std::cout << "compute h" << std::endl;
+            std::cout << "compute h" << std::endl;
 
             float S = (v2Pos-v1Pos).cross(v3Pos-v1Pos).norm()/2;
             float h = 2*S / v1v2Len;
@@ -531,8 +596,8 @@ class FlattenObject {
             float c = sqrt(v2v3Len*v2v3Len - h*h);
             if (c > v1v2Len && c > b) b = -b;
 
-            // std::cout << "h = " << h << std::endl;
-            // std::cout << "compute fH and flat pos" << std::endl;
+            std::cout << "h = " << h << std::endl;
+            std::cout << "compute fH and flat pos" << std::endl;
             
             // compute flat pos of H and flat pos of v3
             Eigen::Vector3f fH = ((v1v2Len-b)/v1v2Len)*fv1Pos + (b/v1v2Len)*fv2Pos;
@@ -541,26 +606,31 @@ class FlattenObject {
             flat1 = fH + h * flatDir;
             flat2 = fH + h * (-flatDir);
 
-            // std::cout << "fH = " << std::endl << fH << std::endl;
-            // std::cout << "fv1v2 = " << std::endl << fv1v2 << std::endl;
-            // std::cout << "flatDir = " << std::endl << flatDir << std::endl;
+            std::cout << "fH = " << std::endl << fH << std::endl;
+            std::cout << "fv1v2 = " << std::endl << fv1v2 << std::endl;
+            std::cout << "flatDir = " << std::endl << flatDir << std::endl;
+            std::cout << "-flatDir = " << std::endl << -flatDir << std::endl;
 
             // check overlap
             if (!overlap(flat1, fv1Pos, fv2Pos, flattened)) {
-                // std::cout << "flat1 = " << std::endl << flat1 << std::endl;
+                std::cout << "flat1 = " << std::endl << flat1 << std::endl;
                 fv3Pos = flat1;
                 return true;
             }
-            else if (!overlap(flat2, fv1Pos, fv2Pos, flattened)) {
-                // std::cout << "flat2 = " << std::endl << flat2 << std::endl;
-                fv3Pos = flat2;
-                return true;
+            else {
+                std::cout << "flat1 fails" << std::endl;
+                if (!overlap(flat2, fv1Pos, fv2Pos, flattened)) {
+                    std::cout << "flat2 = " << std::endl << flat2 << std::endl;
+                    fv3Pos = flat2;
+                    return true;
+                }
+                std::cout << "flat2 fails" << std::endl;
             }
-            // std::cout << "cannot flat" << std::endl;
-            // std::cout << "flat1" << std::endl;
-            // std::cout << flat1 << std::endl;
-            // std::cout << "flat2" << std::endl;
-            // std::cout << flat2 << std::endl;
+            std::cout << "cannot flat" << std::endl;
+            std::cout << "flat1" << std::endl;
+            std::cout << flat1 << std::endl;
+            std::cout << "flat2" << std::endl;
+            std::cout << flat2 << std::endl;
             return false;
         }
 
@@ -571,13 +641,15 @@ class FlattenObject {
                 int ov1, ov2, ov3;
                 ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
 
+                std::cout << "compare to mesh " << mesh->id << std::endl;
                 if (isInside(flatPos, mesh)) return true;
-                // std::cout << "not inside" << std::endl;
+                Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
+                if (isInside(center, mesh)) return true;
+                std::cout << "not inside" << std::endl;
                 if (lineCross(flatPos, fv1Pos, mesh)) return true;
-                // std::cout << "v1-v2 no lineCross" << std::endl;
+                std::cout << "v1-v2 no lineCross" << std::endl;
                 if (lineCross(flatPos, fv2Pos, mesh)) return true;
-                // std::cout << "v1-v3 no lineCross" << std::endl;
-                
+                std::cout << "v1-v3 no lineCross" << std::endl;
             }
 
             return false;
@@ -591,20 +663,34 @@ class FlattenObject {
             return false;
         }
         bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, Eigen::Vector3f c, Eigen::Vector3f d) {
+            // overlap?
+            if (((a-c).norm() < ESP || (a-d).norm() < ESP) && ((b-c).norm() < ESP || (b-d).norm() < ESP)) {
+                std::cout << "two line overlap" << std::endl;
+                return false;
+            }
             // parallel?
             Eigen::Vector3f AB = b-a;
             Eigen::Vector3f CD = d-c;
-            if (AB.cross(CD).norm() == 0) return false;
+            std::cout << "AB" << std::endl;
+            std::cout << AB << std::endl;
+            std::cout << "CD" << std::endl;
+            std::cout << CD << std::endl;
+            std::cout << "cross norm" << std::endl;
+            std::cout << AB.cross(CD).norm() << std::endl;
+            if (AB.cross(CD).norm() - 0. < ESP) {
+                std::cout << "two line parallel" << std::endl;
+                return false;
+            }
 
             // get intersection
-            Eigen::Matrix2f M;
-            Eigen::Vector2f R;
+            Eigen::Matrix2d M;
+            Eigen::Vector2d R;
             M << a.x()-b.x(), d.x()-c.x(), a.y()-b.y(),  d.y()-c.y();
             R << d.x()-b.x(), d.y()-b.y();
-            Eigen::Vector2f x = M.colPivHouseholderQr().solve(R);
+            Eigen::Vector2d x = M.colPivHouseholderQr().solve(R);
 
             // within range? 0 <= x <= 1
-            return x(0) > 0 && x(0) < 1 && x(1) > 0 && x(1) < 1;
+            return x(0) > ESP && x(0) < 1.0-ESP && x(1) > ESP && x(1) < 1.0-ESP;
         }
         bool isInside(Eigen::Vector3f flatPos, Mesh *mesh) {
             int v1, v2, v3;
@@ -612,13 +698,13 @@ class FlattenObject {
             Eigen::Vector3f a, b, c;
             a = mesh->vid2fv[v1]; b = mesh->vid2fv[v2]; c = mesh->vid2fv[v3];
 
-            Eigen::Matrix3f M;
-            Eigen::Vector3f R;
+            Eigen::Matrix3d M;
+            Eigen::Vector3d R;
             M << a(0),b(0),c(0),  a(1),b(1),c(1), 1,1,1;
             R << flatPos(0), flatPos(1), 1;
-            Eigen::Vector3f x = M.colPivHouseholderQr().solve(R);
+            Eigen::Vector3d x = M.colPivHouseholderQr().solve(R);
 
-            return x(0) >= 0 && x(1) >= 0 && x(2) >= 0;
+            return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
         }
 };
 class _3dObject {
@@ -1042,32 +1128,39 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 _3d_objs_buffer->add_cube(0, 0, 0);
             }
             break;
-        // Add a Bumpy
-        case  GLFW_KEY_2:
-            if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "add a bumpy");
-                _3d_objs_buffer->add_object(BUMPY_CUBE_OFF_PATH);
-            }
-            break;
-        // Add a Bunny
-        case  GLFW_KEY_3:
-            if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "add a bunny");
-                _3d_objs_buffer->add_object(BUNNY_OFF_PATH);
-            }
-            break;
         // Add a Cube from OFF
-        case  GLFW_KEY_4:
+        case  GLFW_KEY_2:
             if (action == GLFW_PRESS) {
                 glfwSetWindowTitle (window, "add a cube");
                 _3d_objs_buffer->add_object(CUBE_OFF_PATH);
             }
             break;
         // Add a Cone
-        case  GLFW_KEY_5:
+        case  GLFW_KEY_3:
             if (action == GLFW_PRESS) {
                 glfwSetWindowTitle (window, "add a cone");
                 _3d_objs_buffer->add_object(CONE_OFF_PATH);
+            }
+            break;
+        // Add a Ball
+        case  GLFW_KEY_4:
+            if (action == GLFW_PRESS) {
+                glfwSetWindowTitle (window, "add a cone");
+                _3d_objs_buffer->add_object(BALL_OFF_PATH);
+            }
+            break;
+        // Add a Bumpy
+        case  GLFW_KEY_5:
+            if (action == GLFW_PRESS) {
+                glfwSetWindowTitle (window, "add a bumpy");
+                _3d_objs_buffer->add_object(BUMPY_CUBE_OFF_PATH);
+            }
+            break;
+        // Add a Bunny
+        case  GLFW_KEY_6:
+            if (action == GLFW_PRESS) {
+                glfwSetWindowTitle (window, "add a bunny");
+                _3d_objs_buffer->add_object(BUNNY_OFF_PATH);
             }
             break;
          // Deleta an object
@@ -1443,8 +1536,8 @@ int main(void)
     // bind special colors
     Eigen::Vector3f special_color = (SELCET_COLOR.cast<float>())/255.0;
     // glUniform3fv(program.uniform("selectedColor"), 1, special_color.data());
-    // special_color = (BLACK.cast<float>())/255.0;
-    special_color = (WHITE.cast<float>())/255.0;
+    special_color = (BLACK.cast<float>())/255.0;
+    // special_color = (WHITE.cast<float>())/255.0;
     glUniform3fv(program.uniform("lineColor"), 1, special_color.data());
 
     // Loop until the user closes the window
