@@ -301,6 +301,16 @@ Eigen::Vector4f to_4_point(Eigen::Vector3f vec) {
   return Eigen::Vector4f(vec.x(), vec.y(), vec.z(), 1.0);
 }
 
+Eigen::Matrix4f mat_to_4(Eigen::Matrix3f M3) {
+  Eigen::Matrix4f M4 = Eigen::MatrixXf::Identity(4, 4);
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      M4.col(i)(j) = M3.col(i)(j);
+    }
+  }
+  return M4;
+}
+
 std::string get_color_RGB(Eigen::Vector3f C) {
   std::string color_hex = "rgb(#R, #G, #B)";
   color_hex = replace_all(color_hex, "#R", std::to_string(int(C(0))));
@@ -321,8 +331,8 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 std::string get_svg_root_template() {
   std::string svg_root_template = 
   "<svg xmlns='http://www.w3.org/2000/svg' version='1.200000' width='100%' height='100%' viewBox='-1 -1 2 2' xmlns:xlink='http://www.w3.org/1999/xlink'>\
-    <g>\
-    #TG\
+    <g transform='matrix(1.0, 0.0, 0.0, $d, 0.0, 0.3)'>\
+    $TG\
     </g>\
   </svg>";
   return svg_root_template;

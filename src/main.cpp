@@ -376,19 +376,6 @@ class Mesh {
             if (xv < 0 || xv+xu > 1) return false;
             return true;
         }
-        std::string export_svg() {
-            std::string svg_str = get_tri_g_template();
-            // Vertex
-            int v1, v2, v3;
-            v1 = vids[0]; v2 = vids[1]; v3 = vids[2];
-            std::string ax = std::to_string(vid2fv[v1].x()), ay = std::to_string(vid2fv[v1].y());
-            std::string bx = std::to_string(vid2fv[v2].x()), by = std::to_string(vid2fv[v2].y());
-            std::string cx = std::to_string(vid2fv[v3].x()), cy = std::to_string(vid2fv[v3].y());
-            svg_str = replace_all(svg_str, "$AX", ax); svg_str = replace_all(svg_str, "$AY", ay);
-            svg_str = replace_all(svg_str, "$BX", bx); svg_str = replace_all(svg_str, "$BY", by);
-            svg_str = replace_all(svg_str, "$CX", cx); svg_str = replace_all(svg_str, "$CY", cy);
-            return svg_str;
-        }
 };
 class Node {
     public:
@@ -445,6 +432,10 @@ class FlattenObject {
         VertexArrayObject VAO;
         VertexBufferObject VBO_P;
         IndexBufferObject IBO_IDX;
+
+        Eigen::MatrixXf ModelMat;
+        Eigen::MatrixXf T_to_ori;
+        Eigen::Vector4f barycenter;
 
         void addEdge(int v1, int v2, Mesh* mesh) {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
@@ -569,10 +560,39 @@ class FlattenObject {
             // std::cout << "finished flattening" << std::endl;
             // std::cout << "flattened " << flattened.size() << " meshes" << std::endl;
             // std::cout << this->V << std::endl;
+
+            // update flat position to VBO, compute bounding box
+            double maxx = -100, maxy = -100, maxz = -100;
+            double minx = 100, miny = 100, minz = 100;
             for (auto mesh: meshes) {
-                // std::cout << mesh->id << std::endl;
+                // update VBO
                 mesh->updateVBOP();
+                // bounding box
+                Eigen::Matrix3f fV = mesh->getFlatV();
+                double x = fV.col(0)(0), y = fV.col(1)(1), z = fV.col(2)(2);
+                if (x > maxx) maxx = x;
+                if (y > maxy) maxy = y;
+                if (z > maxz) maxz = z;
+                if (x < minx) minx = x;
+                if (y < miny) miny = y;
+                if (z < minz) minz = z;
             }
+            Eigen::MatrixXf bounding_box(4, 2);
+            bounding_box << minx, maxx, miny, maxy, minz, maxz, 1, 1;
+
+            // init model fields
+            this->ModelMat = Eigen::MatrixXf::Identity(4,4);
+            this->T_to_ori = Eigen::MatrixXf::Identity(4,4);
+            this->barycenter = (bounding_box.col(0) + bounding_box.col(1))/2.0;
+
+            // Computer the translate Matrix from barycenter to the origin
+            Eigen::Vector4f delta = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0) - this->barycenter;
+            T_to_ori.col(3)(0) = delta(0); T_to_ori.col(3)(1) = delta(1); T_to_ori.col(3)(2) = delta(2);
+
+            // adjust inital position according to bounding box
+            double scale_factor = fmin(2.0/(maxx-minx), 2.0/(maxy-miny));
+            this->translate(delta);
+            this->scale(scale_factor);
         }
         
         bool flattenMesh(Mesh* preMesh, Mesh* mesh, std::pair<int, int> edge, std::set<Mesh*> &flattened) {
@@ -763,10 +783,54 @@ class FlattenObject {
 
             return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
         }
-        std::string export_svg() {
+        void translate(Eigen::Vector4f delta) {
+            // delta = this->Adjust_Mat.inverse()*delta;
+            Eigen::MatrixXf T = Eigen::MatrixXf::Identity(4, 4);
+            T.col(3)(0) = delta(0); T.col(3)(1) = delta(1); T.col(3)(2) = delta(2);
+            this->update_Model_Mat(T, true);
+        }
+        void scale(double factor) {
+            // double factor = 1+delta;
+            Eigen::MatrixXf S = Eigen::MatrixXf::Identity(4, 4);
+            S.col(0)(0) = factor; S.col(1)(1) = factor; S.col(2)(2) = 1.;
+            Eigen::MatrixXf I = Eigen::MatrixXf::Identity(4,4);
+            S = (2*I-this->T_to_ori)*S*(this->T_to_ori);
+            this->update_Model_Mat(S, false);
+        }
+        void rotate(double degree, Eigen::Matrix4f rotateMat) {
+            double r = degree*PI/180.0;
+            Eigen::MatrixXf R = Eigen::MatrixXf::Identity(4, 4);
+            R.col(0)(0) = std::cos(r); R.col(0)(1) = std::sin(r);
+            R.col(1)(0) = -std::sin(r); R.col(1)(1) = std::cos(r);
+            Eigen::MatrixXf I = Eigen::MatrixXf::Identity(4,4);
+            R = (2*I-this->T_to_ori)*rotateMat*(this->T_to_ori);
+            this->update_Model_Mat(R, false);
+        }
+        void update_Model_Mat(Eigen::MatrixXf M, bool left) {
+            if (left) {
+                // left cross mul
+                this->ModelMat = M*this->ModelMat;
+            }
+            else {
+                // right cross mul
+                this->ModelMat = this->ModelMat*M;
+            }
+        }
+        std::string export_svg(Camera *camera) {
             std::stringstream ss;
             for (auto mesh: meshes) {
-                ss << mesh->export_svg() << std::endl;
+                std::string svg_str = get_tri_g_template();
+                Eigen::MatrixXf fV = mesh->getFlatV();
+                fV = mat_to_4(fV);
+                fV = camera->get_project_mat()*camera->ViewMat*ModelMat*fV;
+                std::string ax = std::to_string(fV.col(0).x()), ay = std::to_string(fV.col(0).y());
+                std::string bx = std::to_string(fV.col(1).x()), by = std::to_string(fV.col(1).y());
+                std::string cx = std::to_string(fV.col(2).x()), cy = std::to_string(fV.col(2).y());
+                svg_str = replace_all(svg_str, "$AX", ax); svg_str = replace_all(svg_str, "$AY", ay);
+                svg_str = replace_all(svg_str, "$BX", bx); svg_str = replace_all(svg_str, "$BY", by);
+                svg_str = replace_all(svg_str, "$CX", cx); svg_str = replace_all(svg_str, "$CY", cy);
+
+                ss << svg_str << std::endl;
             }
             std::string svg_str = ss.str();
             return svg_str;
@@ -959,8 +1023,6 @@ class _3dObject {
             Eigen::MatrixXf I = Eigen::MatrixXf::Identity(4,4);
             R = (2*I-this->T_to_ori)*rotateMat*(this->T_to_ori);
             R_T = (2*I-this->T_to_ori)*rotateMat.inverse()*(this->T_to_ori);
-            // R = (2*I-this->T_to_ori)*R*(this->T_to_ori);
-            // R_T = (2*I-this->T_to_ori)*R_T*(this->T_to_ori);
 
             this->update_Model_Mat(R, R_T, false);
         }
@@ -1095,10 +1157,10 @@ class _3dObjectBuffer {
             0,0,0,1;
             return rotate_mat;
         }
-        std::string export_flat_svg() {
+        std::string export_flat_svg(Camera *camera) {
             std::stringstream ss;
-            for (auto obj: _3d_objs) {
-                ss << obj->flattenObj->export_svg() << std::endl;
+            for (auto it = _3d_objs.rbegin(); it != _3d_objs.rend(); it++) {
+                ss << (*it)->flattenObj->export_svg(camera) << std::endl;
             }
             std::string svg_str = ss.str();
             return svg_str;
@@ -1114,17 +1176,24 @@ int playing_cnt = 0;
 double unitTime = 0.;
 Eigen::MatrixXf AnimeT;
 
-void export_svg() {
+void export_svg(GLFWwindow* window) {
     std::string svg_str = get_svg_root_template();
+    // adjust aspect ratio
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+    double aspect = (double)width/(double)height;
+    svg_str = replace_all(svg_str, "$d", std::to_string(-1.0/aspect));
+    std::cout << "w: " << width << "h: " << height << std::endl;
+    std::cout << "aspect " << aspect << std::endl;
     // flatten objects
-    std::string flat_svg_str = _3d_objs_buffer->export_flat_svg();
-    svg_str = replace_all(svg_str, "#TG", flat_svg_str);
+    std::string flat_svg_str = _3d_objs_buffer->export_flat_svg(camera);
+    svg_str = replace_all(svg_str, "$TG", flat_svg_str);
     // Save svg to file
     std::ofstream svg_file;
     svg_file.open ("export.svg");
     svg_file << svg_str;
     svg_file.close();
-    std::cout << svg_str << std::endl;
+    // std::cout << svg_str << std::endl;
 }
 
 void update_window_scale(GLFWwindow* window) {
@@ -1211,7 +1280,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         case  GLFW_KEY_0:
             if (action == GLFW_PRESS) {
                 glfwSetWindowTitle (window, "export SVG");
-                export_svg();
+                export_svg(window);
             }
             break;
         // Add a cube
@@ -1661,7 +1730,7 @@ int main(void)
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
             auto flatObj = obj->flattenObj;
-            glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
+            glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj->ModelMat.data());
 
             for (auto mesh: flatObj->meshes) {
                 mesh->VAO.bind();

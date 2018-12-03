@@ -174,6 +174,7 @@ Eigen::Matrix4f LookAtRH( Eigen::Vector3f eye, Eigen::Vector3f target, Eigen::Ve
 Eigen::MatrixXf get_ortho_matrix(float l, float r, float b, float t, float n, float f);
 Eigen::Vector4f to_4_vec(Eigen::Vector3f vec);
 Eigen::Vector4f to_4_point(Eigen::Vector3f vec);
+Eigen::Matrix4f mat_to_4(Eigen::Matrix3f M);
 
 std::string replace_all(std::string str, const std::string& from, const std::string& to);
 std::string get_tri_g_template();
