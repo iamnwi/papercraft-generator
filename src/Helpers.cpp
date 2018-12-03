@@ -318,34 +318,6 @@ std::string replace_all(std::string str, const std::string& from, const std::str
     return str;
 }
 
-std::string get_tri_g_template(Eigen::Matrix3Xf C) {
-    return get_tri_g_3c_template(C);
-}
-
-std::string get_tri_g_3c_template(Eigen::Matrix3Xf C) {
-  std::string TRI_G_TEMPLATE = 
-  "<g>\n\
-    <defs>\n\
-      <linearGradient id='B2C_$id' gradientUnits='userSpaceOnUse' x1='$BX' y1='$BY' x2='$CX' y2='$CY'>\n\
-          <stop offset='0%' stop-color='$BColor'/>\n\
-          <stop offset='100%' stop-color='$CColor'/>\n\
-      </linearGradient>\n\
-      <linearGradient id='A_fade_$id' gradientUnits='userSpaceOnUse' x1='$AX' y1='$AY' x2='$BC_P_X' y2='$BC_P_Y'>\n\
-        <stop offset='0%' stop-color='$AColor' />\n\
-        <stop offset='100%' stop-color='$AColor' stop-opacity='0' />\n\
-      </linearGradient>\n\
-    </defs>\n\
-    <path d='M $AX,$AY L $BX,$BY $CX,$CY Z' fill='url(#B2C_$id)'/>\n\
-    <path d='M $AX,$AY L $BX,$BY $CX,$CY Z' fill='url(#A_fade_$id)'/>\n\
-    <path d='M $AX,$AY L $BX,$BY $CX,$CY Z' stroke='black' stroke-width='0.003' fill='none'/>\
-  </g>";
-
-  TRI_G_TEMPLATE = replace_all(TRI_G_TEMPLATE, "$AColor", get_color_RGB(C.col(0)));
-  TRI_G_TEMPLATE = replace_all(TRI_G_TEMPLATE, "$BColor", get_color_RGB(C.col(1)));
-  TRI_G_TEMPLATE = replace_all(TRI_G_TEMPLATE, "$CColor", get_color_RGB(C.col(2)));
-  return TRI_G_TEMPLATE;
-}
-
 std::string get_svg_root_template() {
   std::string svg_root_template = 
   "<svg xmlns='http://www.w3.org/2000/svg' version='1.200000' width='100%' height='100%' viewBox='-1 -1 2 2' xmlns:xlink='http://www.w3.org/1999/xlink'>\
@@ -354,4 +326,18 @@ std::string get_svg_root_template() {
     </g>\
   </svg>";
   return svg_root_template;
+}
+
+std::string get_tri_g_template() {
+  std::string TRI_G_TEMPLATE = 
+  "<g>\
+      <polyline points='$AX,$AY $BX,$BY $CX,$CY, $AX,$AY' stroke='' stroke-width='1' fill='rgb(255, 255, 255)'/>\
+      <polyline points='$AX,$AY $BX,$BY $CX,$CY, $AX,$AY' stroke='black' stroke-width='0.003' fill='none' />\
+  </g>";
+  return TRI_G_TEMPLATE;
+}
+
+std::string get_path_template() {
+  std::string PATH_TEMPLATE = "<path d='$path' fill='none' stroke='black' stroke-width='0.003'/>";
+  return PATH_TEMPLATE;
 }

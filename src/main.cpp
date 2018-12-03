@@ -46,7 +46,7 @@ Eigen::Vector3i ORANGE(255, 165, 0);
 Eigen::Vector3i PURPLE(160, 32, 240);
 Eigen::Vector3i DIMGREY(105,105,105);
 Eigen::Vector3i LIGHTGREY(200,200,200);
-std::vector<Eigen::Vector3i> colors = {RED, GREEN, YELLOW, WHITE, GREY, ORANGE, PURPLE};
+std::vector<Eigen::Vector3i> colors = {RED, GREEN, YELLOW, WHITE, LIGHTGREY, ORANGE, PURPLE};
 
 // Flags
 float pre_aspect_ratio = -1;
@@ -313,7 +313,7 @@ class Mesh {
 
         Mesh(int id, Eigen::MatrixXf V, int v1, int v2, int v3, Eigen::Vector3i color=LIGHTGREY) {
             this->id = id;
-            this->color = color.cast<float>();
+            this->color = color.cast<float>()/255.;
             this->vids.push_back(v1); this->vids.push_back(v2); this->vids.push_back(v3);
             this->vid2v[v1] = V.col(v1); this->vid2v[v2] = V.col(v2); this->vid2v[v3] = V.col(v3);
             // init flat position
@@ -329,8 +329,8 @@ class Mesh {
             int v1 = vids[0], v2 = vids[1], v3 = vids[2];
             Eigen::Matrix3f fV;
             fV << vid2fv[v1], vid2fv[v2], vid2fv[v3];
-            std::cout << "mesh flat V" << std::endl;
-            std::cout << fV << std::endl;
+            // std::cout << "mesh flat V" << std::endl;
+            // std::cout << fV << std::endl;
             this->VBO_P.update(fV);
         }
         Eigen::Matrix3f getFlatV() {
@@ -376,6 +376,19 @@ class Mesh {
             if (xv < 0 || xv+xu > 1) return false;
             return true;
         }
+        std::string export_svg() {
+            std::string svg_str = get_tri_g_template();
+            // Vertex
+            int v1, v2, v3;
+            v1 = vids[0]; v2 = vids[1]; v3 = vids[2];
+            std::string ax = std::to_string(vid2fv[v1].x()), ay = std::to_string(vid2fv[v1].y());
+            std::string bx = std::to_string(vid2fv[v2].x()), by = std::to_string(vid2fv[v2].y());
+            std::string cx = std::to_string(vid2fv[v3].x()), cy = std::to_string(vid2fv[v3].y());
+            svg_str = replace_all(svg_str, "$AX", ax); svg_str = replace_all(svg_str, "$AY", ay);
+            svg_str = replace_all(svg_str, "$BX", bx); svg_str = replace_all(svg_str, "$BY", by);
+            svg_str = replace_all(svg_str, "$CX", cx); svg_str = replace_all(svg_str, "$CY", cy);
+            return svg_str;
+        }
 };
 class Node {
     public:
@@ -396,11 +409,35 @@ class CompareWeight {
             return a.weight < b.weight;
         }
 };
+class Grid {
+    public:
+        double sizex, sizey;
+        std::map<int, std::map<int, std::vector<Mesh*> > > rows;
+        Grid(double sizex = 0.7, double sizey = 0.7) {
+            this->sizex = sizex; this->sizey = sizey;
+        }
+        void addItem(Mesh* mesh) {
+            for (auto item: mesh->vid2fv) {
+                addItem(item.second, mesh);
+            }
+        }
+        void addItem(Eigen::Vector3f point, Mesh* mesh) {
+            int row = point.x() / this->sizex;
+            int col = point.y() / this->sizey;
+            this->rows[row][col].push_back(mesh);
+        }
+        std::vector<Mesh*>* getCell(Eigen::Vector3f point) {
+            int row = point.x() / this->sizex;
+            int col = point.y() / this->sizey;
+            return &this->rows[row][col];
+        }
+};
 class FlattenObject {
     public:
         std::vector<Mesh*> meshes;
         std::map<std::pair<int, int>, std::vector<Mesh*>> edge2meshes;
         std::map<std::pair<int, int>, double> edge2weight;
+        Grid* grid;
 
         Eigen::MatrixXf V;
         Eigen::VectorXi IDX;
@@ -420,10 +457,10 @@ class FlattenObject {
             for (auto nebMesh: edge2meshes[edge]) {
                 if (nebMesh != mesh) {
                     mesh->nebMeshes.push_back(std::make_pair(nebMesh, edge));
-                    std::cout << mesh->id << "->" << nebMesh->id << std::endl;
+                    // std::cout << mesh->id << "->" << nebMesh->id << std::endl;
                 }
             }
-            std::cout << mesh->nebMeshes.size() << std::endl;
+            // std::cout << mesh->nebMeshes.size() << std::endl;
         }
         bool flattenFirst(Mesh* mesh, std::set<Mesh*> &flatten) {
             int v1 = mesh->vids[0], v2 = mesh->vids[1], v3 = mesh->vids[2];
@@ -435,8 +472,8 @@ class FlattenObject {
                 return false;
             }
             mesh->vid2fv[v3] = flatPos;
-            std::cout << "first mesh third point" << std::endl;
-            std::cout << mesh->vid2fv[v3] << std::endl;
+            // std::cout << "first mesh third point" << std::endl;
+            // std::cout << mesh->vid2fv[v3] << std::endl;
             return true;
         }
         FlattenObject(Eigen::MatrixXf V, Eigen::VectorXi IDX) {
@@ -453,38 +490,14 @@ class FlattenObject {
                 addEdge(v1, v2, newMesh);
                 addEdge(v2, v3, newMesh);
                 addEdge(v1, v3, newMesh);
-                std::cout << "id " << newMesh->id << std::endl;
-                std::cout << "v1, v2, v3" << std::endl;
-                std::cout << v1 << " " << v2 << " " << v3 << std::endl;
+                // std::cout << "id " << newMesh->id << std::endl;
+                // std::cout << "v1, v2, v3" << std::endl;
+                // std::cout << v1 << " " << v2 << " " << v3 << std::endl;
             }
 
             std::cout << "created meshes and edge to meshes" << std::endl;
             std::cout << "face #: " << meshes.size() << std::endl;
             std::cout << "edge #: " << edge2meshes.size() << std::endl;
-
-            // // store pair<edge len(weight), edge> into a vector, sort it then construt a max spaning tree
-            // std::vector<std::pair<double, std::pair<int, int> > > sortedEdge;
-            // for (auto item: edge2weight) {
-            //     auto edge = item.first;
-            //     double weight = item.second;
-            //     sortedEdge.push_back(make_pair(weight, edge));
-            // }
-
-            // sort(sortedEdge.begin(), sortedEdge.end());
-            // // need face#-1 edges
-            // std::set<Mesh*> visited;
-            // int edgeCnt = 0;
-            // for (int i = sortedEdge.size()-1; i >= 0; i--) {
-            //     if (edgeCnt >= meshes.size()-1) break;
-            //     auto edge = sortedEdge[i].second;
-            //     Mesh *m1 = edge2meshes[edge][0], *m2 = edge2meshes[edge][1];
-            //     // if (visited.find(m1) == visited.end() || visited.find(m2) == visited.end()) {
-            //         m1->nebMeshes.push_back(std::make_pair(m2, edge));
-            //         m2->nebMeshes.push_back(std::make_pair(m1, edge));
-            //         visited.insert(m1); visited.insert(m2);
-            //         edgeCnt++;
-            //     // }
-            // }
 
             // add edge field to mesh objects
             for (auto mesh: meshes) {
@@ -495,16 +508,23 @@ class FlattenObject {
                 assert(mesh->nebMeshes.size() == 3);
             }
 
-            std::cout << "created meshes to nebs" << std::endl;
-            std::cout << "check connect" << std::endl;
-            for (auto mesh: meshes) {
-                for(auto meshNedge: mesh->nebMeshes) {
-                    Mesh* nebMesh = meshNedge.first;
-                    std::cout << mesh->id << " -> " << nebMesh->id << std::endl;
-                }
-            }
+            // std::cout << "created meshes to nebs" << std::endl;
+            // std::cout << "mesh color" << std::endl;
+            // for (auto mesh: meshes) {
+            //     std::cout << mesh->id << " -> " << mesh->color << std::endl;
+            // }
+            // std::cout << "check connect" << std::endl;
+            // for (auto mesh: meshes) {
+            //     for(auto meshNedge: mesh->nebMeshes) {
+            //         Mesh* nebMesh = meshNedge.first;
+            //         std::cout << mesh->id << " -> " << nebMesh->id << std::endl;
+            //     }
+            // }
 
-            // BFS
+            // new a Regular Grid to boost the overlap checking process.
+            grid = new Grid();
+
+            // maximal spaning tree
             // pq(edge weight, parent mesh, cur mesh)
             std::priority_queue<Node, std::vector<Node>, CompareWeight> pq;
             std::set<Mesh*> flattened;
@@ -514,9 +534,10 @@ class FlattenObject {
             // flat first mesh
             flattenFirst(meshes[0], flattened);
             flattened.insert(meshes[0]);
+            grid->addItem(meshes[0]);
             dist[meshes[0]->id] = DIST_MAX;
             pq.push(Node(DIST_MAX, std::make_pair(0,0), nullptr, meshes[0]));
-            std::cout << "flattened first mesh" << std::endl;
+            // std::cout << "flattened first mesh" << std::endl;
             // std::cout << "mesh flat V" << std::endl;
             // std::cout << meshes[0]->getFlatV() << std::endl;
             
@@ -528,27 +549,28 @@ class FlattenObject {
                     Mesh* nebMesh = meshNedge.first;
                     auto edge = meshNedge.second;
                     if (flattened.find(nebMesh) == flattened.end()) {
-                        std::cout << "inqueue " << nebMesh->id << std::endl;
+                        // std::cout << "inqueue " << nebMesh->id << std::endl;
                         pq.push(Node(edge2weight[edge], edge, node.mesh, nebMesh));
                     }
                 }
                 while (flattened.find(pq.top().mesh) != flattened.end())
                     pq.pop();
                 node = pq.top();
-                std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
-                std::cout << "edge: " << node.edge.first << "-" << node.edge.second << std::endl;
-                std::cout << "pre mesh flat V" << node.parentMesh->getFlatV() << std::endl;
+                // std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
+                // std::cout << "edge: " << node.edge.first << "-" << node.edge.second << std::endl;
+                // std::cout << "pre mesh flat V" << node.parentMesh->getFlatV() << std::endl;
                 flattenMesh(node.parentMesh, node.mesh, node.edge, flattened);
                 flattened.insert(node.mesh);
-                std::cout << "mesh " << node.mesh->id << " flat V" << std::endl;
-                std::cout << node.mesh->getFlatV() << std::endl;
+                grid->addItem(node.mesh);
+                // std::cout << "mesh " << node.mesh->id << " flat V" << std::endl;
+                // std::cout << node.mesh->getFlatV() << std::endl;
             }
 
-            std::cout << "finished flattening" << std::endl;
+            // std::cout << "finished flattening" << std::endl;
             // std::cout << "flattened " << flattened.size() << " meshes" << std::endl;
             // std::cout << this->V << std::endl;
             for (auto mesh: meshes) {
-                std::cout << mesh->id << std::endl;
+                // std::cout << mesh->id << std::endl;
                 mesh->updateVBOP();
             }
         }
@@ -588,7 +610,7 @@ class FlattenObject {
             float v1v3Len = (v3Pos - v1Pos).norm();
             float v2v3Len = (v3Pos - v2Pos).norm();
 
-            std::cout << "compute h" << std::endl;
+            // std::cout << "compute h" << std::endl;
 
             float S = (v2Pos-v1Pos).cross(v3Pos-v1Pos).norm()/2;
             float h = 2*S / v1v2Len;
@@ -596,8 +618,8 @@ class FlattenObject {
             float c = sqrt(v2v3Len*v2v3Len - h*h);
             if (c > v1v2Len && c > b) b = -b;
 
-            std::cout << "h = " << h << std::endl;
-            std::cout << "compute fH and flat pos" << std::endl;
+            // std::cout << "h = " << h << std::endl;
+            // std::cout << "compute fH and flat pos" << std::endl;
             
             // compute flat pos of H and flat pos of v3
             Eigen::Vector3f fH = ((v1v2Len-b)/v1v2Len)*fv1Pos + (b/v1v2Len)*fv2Pos;
@@ -606,51 +628,86 @@ class FlattenObject {
             flat1 = fH + h * flatDir;
             flat2 = fH + h * (-flatDir);
 
-            std::cout << "fH = " << std::endl << fH << std::endl;
-            std::cout << "fv1v2 = " << std::endl << fv1v2 << std::endl;
-            std::cout << "flatDir = " << std::endl << flatDir << std::endl;
-            std::cout << "-flatDir = " << std::endl << -flatDir << std::endl;
+            // std::cout << "fH = " << std::endl << fH << std::endl;
+            // std::cout << "fv1v2 = " << std::endl << fv1v2 << std::endl;
+            // std::cout << "flatDir = " << std::endl << flatDir << std::endl;
+            // std::cout << "-flatDir = " << std::endl << -flatDir << std::endl;
 
             // check overlap
             if (!overlap(flat1, fv1Pos, fv2Pos, flattened)) {
-                std::cout << "flat1 = " << std::endl << flat1 << std::endl;
+                // std::cout << "flat1 = " << std::endl << flat1 << std::endl;
                 fv3Pos = flat1;
                 return true;
             }
             else {
-                std::cout << "flat1 fails" << std::endl;
+                // std::cout << "flat1 fails" << std::endl;
                 if (!overlap(flat2, fv1Pos, fv2Pos, flattened)) {
-                    std::cout << "flat2 = " << std::endl << flat2 << std::endl;
+                    // std::cout << "flat2 = " << std::endl << flat2 << std::endl;
                     fv3Pos = flat2;
                     return true;
                 }
-                std::cout << "flat2 fails" << std::endl;
+                // std::cout << "flat2 fails" << std::endl;
             }
-            std::cout << "cannot flat" << std::endl;
-            std::cout << "flat1" << std::endl;
-            std::cout << flat1 << std::endl;
-            std::cout << "flat2" << std::endl;
-            std::cout << flat2 << std::endl;
+            // std::cout << "cannot flat" << std::endl;
+            // std::cout << "flat1" << std::endl;
+            // std::cout << flat1 << std::endl;
+            // std::cout << "flat2" << std::endl;
+            // std::cout << flat2 << std::endl;
             return false;
         }
 
         bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<Mesh*> &flattened) {
             // check if flatPos inside a flattened triangle mesh
             // std::cout << "check overlap" << std::endl;
-            for (auto mesh: flattened) {
+            std::vector<Mesh*> *nebMeshes = grid->getCell(flatPos);
+            // std::cout << nebMeshes->size() << " meshes in the same grid cell" << std::endl;
+            for (auto mesh: *nebMeshes) {
+                // std::cout << mesh->id << std::endl;
                 int ov1, ov2, ov3;
                 ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
 
-                std::cout << "compare to mesh " << mesh->id << std::endl;
+                // std::cout << "compare to mesh " << mesh->id << std::endl;
                 if (isInside(flatPos, mesh)) return true;
                 Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
                 if (isInside(center, mesh)) return true;
-                std::cout << "not inside" << std::endl;
-                if (lineCross(flatPos, fv1Pos, mesh)) return true;
-                std::cout << "v1-v2 no lineCross" << std::endl;
-                if (lineCross(flatPos, fv2Pos, mesh)) return true;
-                std::cout << "v1-v3 no lineCross" << std::endl;
+                // std::cout << "not inside" << std::endl;
             }
+            // get all near meshes and combine them to one vector
+            std::vector<Mesh*> *v1NebMeshes = grid->getCell(fv1Pos);
+            std::vector<Mesh*> *v2NebMeshes = grid->getCell(fv2Pos);
+            std::set<Mesh*> nearMeshes;
+            for (auto mesh: *nebMeshes) nearMeshes.insert(mesh);
+            for (auto mesh: *v1NebMeshes) nearMeshes.insert(mesh);
+            for (auto mesh: *v2NebMeshes) nearMeshes.insert(mesh);
+            // std::vector<Mesh*> nearMeshes;
+            // nearMeshes.reserve(nebMeshes->size()+v1NebMeshes->size()+v2NebMeshes->size());
+            // nearMeshes.insert(nearMeshes.end(), nebMeshes->begin(), nebMeshes->end());
+            // nearMeshes.insert(nearMeshes.end(), v1NebMeshes->begin(), v1NebMeshes->end());
+            // nearMeshes.insert(nearMeshes.end(), v2NebMeshes->begin(), v2NebMeshes->end());
+            // check line intersection
+            for (auto mesh: nearMeshes) {
+                int ov1, ov2, ov3;
+                ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
+                // std::cout << "compare to mesh " << mesh->id << std::endl;
+                if (lineCross(flatPos, fv1Pos, mesh)) return true;
+                // std::cout << "v1-v2 no lineCross" << std::endl;
+                if (lineCross(flatPos, fv2Pos, mesh)) return true;
+                // std::cout << "v1-v3 no lineCross" << std::endl;
+            }
+            // for (auto mesh: flattened) {
+            //     int ov1, ov2, ov3;
+            //     ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
+
+            //     std::cout << "compare to mesh " << mesh->id << std::endl;
+            //     // if (isInside(flatPos, mesh)) return true;
+            //     // Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
+            //     // if (isInside(center, mesh)) return true;
+            //     // std::cout << "not inside" << std::endl;
+            //     if (lineCross(flatPos, fv1Pos, mesh)) return true;
+            //     // std::cout << "v1-v2 no lineCross" << std::endl;
+            //     if (lineCross(flatPos, fv2Pos, mesh)) return true;
+            //     // std::cout << "v1-v3 no lineCross" << std::endl;
+            // }
 
             return false;
         }
@@ -665,20 +722,20 @@ class FlattenObject {
         bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, Eigen::Vector3f c, Eigen::Vector3f d) {
             // overlap?
             if (((a-c).norm() < ESP || (a-d).norm() < ESP) && ((b-c).norm() < ESP || (b-d).norm() < ESP)) {
-                std::cout << "two line overlap" << std::endl;
+                // std::cout << "two line overlap" << std::endl;
                 return false;
             }
             // parallel?
             Eigen::Vector3f AB = b-a;
             Eigen::Vector3f CD = d-c;
-            std::cout << "AB" << std::endl;
-            std::cout << AB << std::endl;
-            std::cout << "CD" << std::endl;
-            std::cout << CD << std::endl;
-            std::cout << "cross norm" << std::endl;
-            std::cout << AB.cross(CD).norm() << std::endl;
+            // std::cout << "AB" << std::endl;
+            // std::cout << AB << std::endl;
+            // std::cout << "CD" << std::endl;
+            // std::cout << CD << std::endl;
+            // std::cout << "cross norm" << std::endl;
+            // std::cout << AB.cross(CD).norm() << std::endl;
             if (AB.cross(CD).norm() - 0. < ESP) {
-                std::cout << "two line parallel" << std::endl;
+                // std::cout << "two line parallel" << std::endl;
                 return false;
             }
 
@@ -705,6 +762,14 @@ class FlattenObject {
             Eigen::Vector3d x = M.colPivHouseholderQr().solve(R);
 
             return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
+        }
+        std::string export_svg() {
+            std::stringstream ss;
+            for (auto mesh: meshes) {
+                ss << mesh->export_svg() << std::endl;
+            }
+            std::string svg_str = ss.str();
+            return svg_str;
         }
 };
 class _3dObject {
@@ -1030,6 +1095,14 @@ class _3dObjectBuffer {
             0,0,0,1;
             return rotate_mat;
         }
+        std::string export_flat_svg() {
+            std::stringstream ss;
+            for (auto obj: _3d_objs) {
+                ss << obj->flattenObj->export_svg() << std::endl;
+            }
+            std::string svg_str = ss.str();
+            return svg_str;
+        }
 };
 
 _3dObjectBuffer* _3d_objs_buffer;
@@ -1040,6 +1113,19 @@ bool is_playing = false;
 int playing_cnt = 0;
 double unitTime = 0.;
 Eigen::MatrixXf AnimeT;
+
+void export_svg() {
+    std::string svg_str = get_svg_root_template();
+    // flatten objects
+    std::string flat_svg_str = _3d_objs_buffer->export_flat_svg();
+    svg_str = replace_all(svg_str, "#TG", flat_svg_str);
+    // Save svg to file
+    std::ofstream svg_file;
+    svg_file.open ("export.svg");
+    svg_file << svg_str;
+    svg_file.close();
+    std::cout << svg_str << std::endl;
+}
 
 void update_window_scale(GLFWwindow* window) {
     camera->update_project_mat(window);
@@ -1121,6 +1207,13 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 {
     switch (key)
     {
+        // export svg
+        case  GLFW_KEY_0:
+            if (action == GLFW_PRESS) {
+                glfwSetWindowTitle (window, "export SVG");
+                export_svg();
+            }
+            break;
         // Add a cube
         case  GLFW_KEY_1:
             if (action == GLFW_PRESS) {
@@ -1149,11 +1242,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 _3d_objs_buffer->add_object(BALL_OFF_PATH);
             }
             break;
-        // Add a Bumpy
+        // Add a Fox
         case  GLFW_KEY_5:
             if (action == GLFW_PRESS) {
                 glfwSetWindowTitle (window, "add a bumpy");
-                _3d_objs_buffer->add_object(BUMPY_CUBE_OFF_PATH);
+                _3d_objs_buffer->add_object(FOX_OFF_PATH);
             }
             break;
         // Add a Bunny
@@ -1565,16 +1658,14 @@ int main(void)
         glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
         glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, camera->get_project_mat().data());
 
-        glUniform1i(program.uniform("isSelected"), 1);
-        glUniform1i(program.uniform("isFlatShading"), 0);
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
             auto flatObj = obj->flattenObj;
+            glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
 
             for (auto mesh: flatObj->meshes) {
                 mesh->VAO.bind();
                 program.bindVertexAttribArray("position", mesh->VBO_P);
-                glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
                 glUniform3fv(program.uniform("color"), 1, mesh->color.data());
 
                 glUniform1i(program.uniform("isLine"), 1);

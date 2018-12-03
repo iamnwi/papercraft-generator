@@ -148,11 +148,12 @@ void _check_gl_error(const char *file, int line);
 
 #define PI 3.14159265
 #define BUMPY_CUBE_OFF_PATH "../data/bumpy_cube.off"
-#define BUNNY_OFF_PATH "../data/bunny.off"
+#define BUNNY_OFF_PATH "../data/bunny_remesh.off"
 #define CUBE_OFF_PATH "../data/cube.off"
 // #define CUBE_OFF_PATH "../data/cube_desk.off"
 #define BALL_OFF_PATH "../data/ball.off"
 #define CONE_OFF_PATH "../data/cone.off"
+#define FOX_OFF_PATH "../data/fox.off"
 #define WIREFRAME 0
 #define FLAT_SHADING 1
 #define PHONG_SHADING 2
@@ -175,8 +176,6 @@ Eigen::Vector4f to_4_vec(Eigen::Vector3f vec);
 Eigen::Vector4f to_4_point(Eigen::Vector3f vec);
 
 std::string replace_all(std::string str, const std::string& from, const std::string& to);
-std::string get_tri_g_template(Eigen::Matrix3Xf C);
-std::string get_tri_g_3c_template(Eigen::Matrix3Xf C);
+std::string get_tri_g_template();
 std::string get_svg_root_template();
-std::string get_color_RGB(Eigen::Vector3f C);
 std::string get_path_template();
