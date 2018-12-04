@@ -338,6 +338,12 @@ class Mesh {
             fV << vid2fv[v1], vid2fv[v2], vid2fv[v3];
             return fV;
         }
+        Eigen::Matrix3f getV() {
+            int v1 = vids[0], v2 = vids[1], v3 = vids[2];
+            Eigen::Matrix3f V;
+            V << vid2v[v1], vid2v[v2], vid2v[v3];
+            return V;
+        }
         Mesh(Eigen::MatrixXf V, Eigen::MatrixXf bounding_box, Eigen::Vector3i color=LIGHTGREY) {
             this->r = 0; this->s = 1; this->tx = 0; this->ty = 0;
             this->color = color.cast<float>();
@@ -519,10 +525,8 @@ class FlattenObject {
             grid = new Grid();
 
             // maximal spaning tree
-            // pq(edge weight, parent mesh, cur mesh)
             std::priority_queue<Node, std::vector<Node>, CompareWeight> pq;
             std::set<Mesh*> flattened;
-            std::set<Mesh*> inqueue;
             std::vector<double> dist(meshes.size(), 0.);
 
             // flat first mesh
@@ -536,28 +540,31 @@ class FlattenObject {
             // std::cout << meshes[0]->getFlatV() << std::endl;
             
             // max spanning tree, prime algorithm
-            while (flattened.size() < meshes.size()) {
+            while (!pq.empty()) {
                 auto node = pq.top();
                 pq.pop();
                 for(auto meshNedge: node.mesh->nebMeshes) {
                     Mesh* nebMesh = meshNedge.first;
                     auto edge = meshNedge.second;
-                    if (flattened.find(nebMesh) == flattened.end()) {
+                    if (flattened.find(nebMesh) == flattened.end() && edge2weight[edge] > dist[nebMesh->id]) {
+                        dist[nebMesh->id] = edge2weight[edge];
                         // std::cout << "inqueue " << nebMesh->id << std::endl;
                         pq.push(Node(edge2weight[edge], edge, node.mesh, nebMesh));
                     }
                 }
-                while (flattened.find(pq.top().mesh) != flattened.end())
+                // pop out all meshes that is flatted or cannot be flatted in this island
+                while (!pq.empty() && (flattened.find(pq.top().mesh) != flattened.end() || !flattenMesh(pq.top().parentMesh, pq.top().mesh, pq.top().edge, flattened))) {
+                    // std::cout << "pop out mesh " << pq.top().mesh->id << std::endl;
                     pq.pop();
-                node = pq.top();
-                // std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
-                // std::cout << "edge: " << node.edge.first << "-" << node.edge.second << std::endl;
-                // std::cout << "pre mesh flat V" << node.parentMesh->getFlatV() << std::endl;
-                flattenMesh(node.parentMesh, node.mesh, node.edge, flattened);
-                flattened.insert(node.mesh);
-                grid->addItem(node.mesh);
-                // std::cout << "mesh " << node.mesh->id << " flat V" << std::endl;
-                // std::cout << node.mesh->getFlatV() << std::endl;
+                }
+                if (!pq.empty()) {
+                    node = pq.top();
+                    flattened.insert(node.mesh);
+                    grid->addItem(node.mesh);
+                    // std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
+                    // std::cout << "edge: " << node.edge.first << "-" << node.edge.second << std::endl;
+                    // std::cout << "pre mesh flat V" << node.parentMesh->getFlatV() << std::endl;
+                }
             }
 
             // std::cout << "finished flattening" << std::endl;
@@ -682,21 +689,25 @@ class FlattenObject {
         }
 
         bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<Mesh*> &flattened) {
-            // check if flatPos inside a flattened triangle mesh
-            // std::cout << "check overlap" << std::endl;
+            // check if any vertices of a flat Triangle inside the other flat Triangle
             std::vector<Mesh*> *nebMeshes = grid->getCell(flatPos);
-            // std::cout << nebMeshes->size() << " meshes in the same grid cell" << std::endl;
             for (auto mesh: *nebMeshes) {
-                // std::cout << mesh->id << std::endl;
-                int ov1, ov2, ov3;
-                ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
-
-                // std::cout << "compare to mesh " << mesh->id << std::endl;
-                if (isInside(flatPos, mesh)) return true;
+                Eigen::Matrix3f meshfV = mesh->getFlatV();
+                if (isInside(flatPos, meshfV)) return true;
                 Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
-                if (isInside(center, mesh)) return true;
+                if (isInside(center, meshfV)) return true;
+
+                Eigen::Matrix3f curMeshfV;
+                curMeshfV << flatPos, fv1Pos, fv2Pos;
+                if (isInside(meshfV.col(0), curMeshfV)) return true;
+                if (isInside(meshfV.col(1), curMeshfV)) return true;
+                if (isInside(meshfV.col(2), curMeshfV)) return true;
+                center = (meshfV.col(0)+meshfV.col(1)+meshfV.col(2))/3.;
+                if (isInside(center, curMeshfV)) return true;
+
                 // std::cout << "not inside" << std::endl;
             }
+
             // get all near meshes and combine them to one vector
             std::vector<Mesh*> *v1NebMeshes = grid->getCell(fv1Pos);
             std::vector<Mesh*> *v2NebMeshes = grid->getCell(fv2Pos);
@@ -704,11 +715,7 @@ class FlattenObject {
             for (auto mesh: *nebMeshes) nearMeshes.insert(mesh);
             for (auto mesh: *v1NebMeshes) nearMeshes.insert(mesh);
             for (auto mesh: *v2NebMeshes) nearMeshes.insert(mesh);
-            // std::vector<Mesh*> nearMeshes;
-            // nearMeshes.reserve(nebMeshes->size()+v1NebMeshes->size()+v2NebMeshes->size());
-            // nearMeshes.insert(nearMeshes.end(), nebMeshes->begin(), nebMeshes->end());
-            // nearMeshes.insert(nearMeshes.end(), v1NebMeshes->begin(), v1NebMeshes->end());
-            // nearMeshes.insert(nearMeshes.end(), v2NebMeshes->begin(), v2NebMeshes->end());
+
             // check line intersection
             for (auto mesh: nearMeshes) {
                 int ov1, ov2, ov3;
@@ -719,20 +726,6 @@ class FlattenObject {
                 if (lineCross(flatPos, fv2Pos, mesh)) return true;
                 // std::cout << "v1-v3 no lineCross" << std::endl;
             }
-            // for (auto mesh: flattened) {
-            //     int ov1, ov2, ov3;
-            //     ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
-
-            //     std::cout << "compare to mesh " << mesh->id << std::endl;
-            //     // if (isInside(flatPos, mesh)) return true;
-            //     // Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
-            //     // if (isInside(center, mesh)) return true;
-            //     // std::cout << "not inside" << std::endl;
-            //     if (lineCross(flatPos, fv1Pos, mesh)) return true;
-            //     // std::cout << "v1-v2 no lineCross" << std::endl;
-            //     if (lineCross(flatPos, fv2Pos, mesh)) return true;
-            //     // std::cout << "v1-v3 no lineCross" << std::endl;
-            // }
 
             return false;
         }
@@ -774,11 +767,11 @@ class FlattenObject {
             // within range? 0 <= x <= 1
             return x(0) > ESP && x(0) < 1.0-ESP && x(1) > ESP && x(1) < 1.0-ESP;
         }
-        bool isInside(Eigen::Vector3f flatPos, Mesh *mesh) {
-            int v1, v2, v3;
-            v1 = mesh->vids[0]; v2 = mesh->vids[1]; v3 = mesh->vids[2];
+        bool isInside(Eigen::Vector3f flatPos, Eigen::Matrix3f meshfV) {
+            // int v1, v2, v3;
+            // v1 = mesh->vids[0]; v2 = mesh->vids[1]; v3 = mesh->vids[2];
             Eigen::Vector3f a, b, c;
-            a = mesh->vid2fv[v1]; b = mesh->vid2fv[v2]; c = mesh->vid2fv[v3];
+            a = meshfV.col(0); b = meshfV.col(1); c = meshfV.col(2);
 
             Eigen::Matrix3d M;
             Eigen::Vector3d R;
@@ -788,6 +781,20 @@ class FlattenObject {
 
             return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
         }
+        // bool isInside(Eigen::Vector3f flatPos, Mesh *mesh) {
+        //     int v1, v2, v3;
+        //     v1 = mesh->vids[0]; v2 = mesh->vids[1]; v3 = mesh->vids[2];
+        //     Eigen::Vector3f a, b, c;
+        //     a = mesh->vid2fv[v1]; b = mesh->vid2fv[v2]; c = mesh->vid2fv[v3];
+
+        //     Eigen::Matrix3d M;
+        //     Eigen::Vector3d R;
+        //     M << a(0),b(0),c(0),  a(1),b(1),c(1), 1,1,1;
+        //     R << flatPos(0), flatPos(1), 1;
+        //     Eigen::Vector3d x = M.colPivHouseholderQr().solve(R);
+
+        //     return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
+        // }
         bool hit(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &dist) {
             bool intersected = false;
             for (auto mesh : this->meshes) {
