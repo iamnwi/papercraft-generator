@@ -166,6 +166,8 @@ void _check_gl_error(const char *file, int line);
 #define CILCK_ACTION 1
 #define RAY_ACTION 2
 #define ESP 1e-6
+#define LEFTSUBWINDOW 0
+#define RIGHTSUBWINDOW 1
 
 bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXf &V, Eigen::MatrixXf &C, Eigen::VectorXi &IDX);
 Eigen::MatrixXf get_bounding_box(Eigen::MatrixXf V);

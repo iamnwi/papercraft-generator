@@ -170,7 +170,8 @@ class Camera {
         void update_project_mat(GLFWwindow* window) {
             int width, height;
             glfwGetWindowSize(window, &width, &height);
-            double halfWidth = width*0.5f;
+            width /= 2;
+            // height /= 2;
             double aspect = (double)width/(double)height;
             this->t = tan(theta/2) * std::abs(n);
             this->b = -this->t;
@@ -329,8 +330,6 @@ class Mesh {
             int v1 = vids[0], v2 = vids[1], v3 = vids[2];
             Eigen::Matrix3f fV;
             fV << vid2fv[v1], vid2fv[v2], vid2fv[v3];
-            // std::cout << "mesh flat V" << std::endl;
-            // std::cout << fV << std::endl;
             this->VBO_P.update(fV);
         }
         Eigen::Matrix3f getFlatV() {
@@ -590,7 +589,7 @@ class FlattenObject {
             T_to_ori.col(3)(0) = delta(0); T_to_ori.col(3)(1) = delta(1); T_to_ori.col(3)(2) = delta(2);
 
             // adjust inital position according to bounding box
-            double scale_factor = fmin(2.0/(maxx-minx), 2.0/(maxy-miny));
+            double scale_factor = fmin(1.0/(maxx-minx), 1.0/(maxy-miny));
             this->translate(delta);
             this->scale(scale_factor);
         }
@@ -782,6 +781,27 @@ class FlattenObject {
             Eigen::Vector3d x = M.colPivHouseholderQr().solve(R);
 
             return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
+        }
+        bool hit(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &dist) {
+            bool intersected = false;
+            for (auto mesh : this->meshes) {
+                Eigen::Vector4f intersection;
+                Eigen::MatrixXf mesh_fV(4,3);
+                Eigen::Matrix3f fVmat3 = mesh->getFlatV();
+                mesh_fV << 
+                    fVmat3.row(0),
+                    fVmat3.row(1),
+                    fVmat3.row(2),
+                    1, 1, 1;
+                mesh_fV = this->ModelMat*mesh_fV;
+
+                if (mesh->getIntersection(ray_origin, ray_direction, intersection, mesh_fV)) {
+                    intersected = true;
+                    if (intersection == ray_origin) dist = 0;
+                    else dist = std::fmin((intersection-ray_origin).norm(), dist);
+                }
+            }
+            return intersected;
         }
         void translate(Eigen::Vector4f delta) {
             // delta = this->Adjust_Mat.inverse()*delta;
@@ -1074,11 +1094,13 @@ class _3dObjectBuffer {
     public:
         std::vector<_3dObject*> _3d_objs;
         _3dObject* selected_obj;
+        FlattenObject* selected_flat_obj;
         RayTracer* ray_tracer;
         int color_idx;
 
         _3dObjectBuffer() {
             selected_obj = nullptr;
+            selected_flat_obj = nullptr;
             ray_tracer = new RayTracer();
             ray_tracer->add_light(Eigen::Vector4f(0.0, 0.0, 1, 1.0));
             color_idx = 0;
@@ -1093,41 +1115,79 @@ class _3dObjectBuffer {
             this->color_idx++;
             _3d_objs.push_back(new _3dObject(off_path, this->color_idx));
         }
-        bool hit(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &ret_dist, int mode=CILCK_ACTION) {
-            // find the hit one if any
+        bool hit(int subWindow, Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &ret_dist, int mode=CILCK_ACTION) {
             float min_dist = DIST_MAX;
             _3dObject* selected = nullptr;
-            for (auto obj: _3d_objs) {
-                float dist = DIST_MAX;
-                if (obj->hit(ray_origin, ray_direction, dist)) {
-                    if (selected == nullptr || min_dist > dist) {
-                        min_dist = dist;
-                        selected = obj;
+            FlattenObject* selected_flat = nullptr;
+            if (subWindow == LEFTSUBWINDOW) {
+                // find the hitted 3D object if any
+                for (auto obj: _3d_objs) {
+                    float dist = DIST_MAX;
+                    if (obj->hit(ray_origin, ray_direction, dist)) {
+                        if (selected == nullptr || min_dist > dist) {
+                            min_dist = dist;
+                            selected = obj;
+                        }
+                    }
+                }
+            }
+            else if (subWindow == RIGHTSUBWINDOW) {
+                // find the hitted flat object if any
+                for (auto obj: _3d_objs) {
+                    float dist = DIST_MAX;
+                    if (obj->flattenObj->hit(ray_origin, ray_direction, dist)) {
+                        if (selected == nullptr || min_dist > dist) {
+                            min_dist = dist;
+                            selected_flat = obj->flattenObj;
+                        }
                     }
                 }
             }
             ret_dist = min_dist;
 
-            if (mode == CILCK_ACTION)
+            if (mode == CILCK_ACTION) {
+                // if (selected) this->selected_obj = selected;
+                // else if (selected_flat) this->selected_flat_obj = selected_flat;
                 this->selected_obj = selected;
+                this->selected_flat_obj = selected_flat;
+            }
 
-            return selected != nullptr;
+            return selected != nullptr || selected_flat != nullptr;
         }
         bool translate(Eigen::Vector4f delta) {
-            if (this->selected_obj == nullptr) return false;
-            this->selected_obj->translate(delta);
-            return true;
+            if (this->selected_obj != nullptr) {
+                this->selected_obj->translate(delta);
+                return true;
+            }
+            else if (this->selected_flat_obj != nullptr) {
+                this->selected_flat_obj->translate(delta);
+                return true;
+            }
+            return false;
         }
         bool rotate(double degree, Eigen::Vector3f rotateAixs) {
-            if (this->selected_obj == nullptr) return false;
-            auto M = this->get_rotate_mat(degree, rotateAixs);
-            this->selected_obj->rotate(degree, M);
-            return true;
+            if (this->selected_obj != nullptr) {
+                auto M = this->get_rotate_mat(degree, rotateAixs);
+                this->selected_obj->rotate(degree, M);
+                return true;
+            }
+            else if (this->selected_flat_obj != nullptr) {
+                auto M = this->get_rotate_mat(degree, rotateAixs);
+                this->selected_flat_obj->rotate(degree, M);
+                return true;
+            }
+            return false;
         }
         bool scale(double factor) {
-            if (this->selected_obj == nullptr) return false;
-            this->selected_obj->scale(factor);
-            return true;
+            if (this->selected_obj != nullptr) {
+                this->selected_obj->scale(factor);
+                return true;
+            }
+            else if (this->selected_flat_obj != nullptr) {
+                this->selected_flat_obj->scale(factor);
+                return true;
+            }
+            return false;
         }
         bool switch_render_mode(int mode) {
             if (this->selected_obj == nullptr) return false;
@@ -1201,7 +1261,7 @@ void update_window_scale(GLFWwindow* window) {
     camera->look_at(window);
 }
 
-Eigen::Vector4f get_click_position(GLFWwindow* window) {
+Eigen::Vector4f get_click_position(GLFWwindow* window, int &subWindow) {
     // Get the position of the mouse in the window
     double xpos, ypos;
     glfwGetCursorPos(window, &xpos, &ypos);
@@ -1211,7 +1271,17 @@ Eigen::Vector4f get_click_position(GLFWwindow* window) {
     glfwGetWindowSize(window, &width, &height);
 
     // Convert screen position to world coordinates
-    Eigen::Vector4f p_screen(xpos,height-1-ypos,0.0,1.0);
+    Eigen::Vector4f p_screen;
+    // click on right screen
+    if (xpos > width/2) {
+        subWindow = RIGHTSUBWINDOW;
+        p_screen = Eigen::Vector4f((xpos-width/2)*2,height-1-ypos,0.0,1.0);
+    }
+    // click on left screen
+    else {
+        subWindow = LEFTSUBWINDOW;
+        p_screen = Eigen::Vector4f(xpos*2,height-1-ypos,0.0,1.0);
+    }
     Eigen::Vector4f p_canonical((p_screen[0]/width)*2-1,(p_screen[1]/height)*2-1,-camera->n,1.0);
     Eigen::Vector4f p_camera = camera->get_project_mat().inverse() * p_canonical;
     if (fabs(p_camera(3)-1.0) > 0.001) {
@@ -1230,7 +1300,8 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
     // Convert screen position to world coordinates
-    Eigen::Vector4f click_point = get_click_position(window);
+    int subWindow;
+    Eigen::Vector4f click_point = get_click_position(window, subWindow);
 
     // Update the position of the first vertex if the left button is pressed
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
@@ -1249,7 +1320,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
             std::cout << ray_direction << std::endl;
         }
         float dist = 0;
-        if (_3d_objs_buffer->hit(ray_origin, ray_direction, dist)) {
+        if (_3d_objs_buffer->hit(subWindow, ray_origin, ray_direction, dist)) {
             drag = true;
             hit_dist = dist;
             pre_cursor_point = click_point;
@@ -1263,7 +1334,8 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
 {
     // Convert screen position to world coordinates
-    Eigen::Vector4f click_point = get_click_position(window);
+    int subWindow;
+    Eigen::Vector4f click_point = get_click_position(window, subWindow);
 
     if (drag) {
         Eigen::Vector4f delta = click_point-pre_cursor_point;
@@ -1498,89 +1570,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                     glfwSetWindowTitle (window, "switch to perspective projection");
             }
             break;
-        // bezier curve
-        case GLFW_KEY_C:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
-                    glfwSetWindowTitle (window, "add a control point");
-                    _3d_objs_buffer->selected_obj->bc->insert_point(0., 0., 0.);
-                }
-            }
-            break;
-        case GLFW_KEY_COMMA:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
-                    auto bc = _3d_objs_buffer->selected_obj->bc;
-                    if (bc->translate(Eigen::Vector4f(-0.2, 0., 0., 0.), bc->V.cols()-1))
-                        glfwSetWindowTitle (window, "move a control point to left");
-                }
-            }
-            break;
-        case GLFW_KEY_PERIOD:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
-                    auto bc = _3d_objs_buffer->selected_obj->bc;
-                    if (bc->translate(Eigen::Vector4f(0.2, 0., 0., 0.), bc->V.cols()-1))
-                        glfwSetWindowTitle (window, "move a control point to right");
-                }
-            }
-            break;
-        case GLFW_KEY_APOSTROPHE:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
-                    auto bc = _3d_objs_buffer->selected_obj->bc;
-                    if (bc->translate(Eigen::Vector4f(0., 0.2, 0., 0.), bc->V.cols()-1))
-                        glfwSetWindowTitle (window, "move a control point to up");
-                }
-            }
-            break;
-        case GLFW_KEY_SLASH:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
-                    auto bc = _3d_objs_buffer->selected_obj->bc;
-                    if (bc->translate(Eigen::Vector4f(0., -0.2, 0., 0.), bc->V.cols()-1))
-                        glfwSetWindowTitle(window, "move a control point to down");
-                }
-            }
-            break;
-        case GLFW_KEY_LEFT_BRACKET:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
-                    auto bc = _3d_objs_buffer->selected_obj->bc;
-                    if (bc->translate(Eigen::Vector4f(0., 0., -0.2, 0.), bc->V.cols()-1))
-                        glfwSetWindowTitle(window, "move a control point to front");
-                }
-            }
-            break;
-        case GLFW_KEY_RIGHT_BRACKET:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
-                    auto bc = _3d_objs_buffer->selected_obj->bc;
-                    if (bc->translate(Eigen::Vector4f(0., 0., 0.2, 0.), bc->V.cols()-1))
-                        glfwSetWindowTitle(window, "move a control point to back");
-                }
-            }
-            break;
-        // play animation
-        case GLFW_KEY_SPACE:
-            if (action == GLFW_PRESS) {
-                if (playing_cnt == 0) {
-                    glfwSetWindowTitle(window, "playing animation...");
-                    playing_cnt = _3d_objs_buffer->_3d_objs.size();
-                    int mxlen = 0;
-                    for (auto obj: _3d_objs_buffer->_3d_objs) {
-                        obj->bc->nxt_curve_pt = 0;
-                        obj->bc->anime_finish = false;
-                        if (obj->bc->curve_points.cols() > mxlen) mxlen = obj->bc->curve_points.cols();
-                    }
-                    if (mxlen > 0) {
-                        unitTime = 5.0/mxlen;
-                    }
-                    auto t_pre = std::chrono::high_resolution_clock::now();
-                    std::cout << "start play" << std::endl;
-                }
-            }
-            break;
         default:
             break;
     }
@@ -1609,6 +1598,7 @@ int main(void)
 
     // Create a windowed mode window and its OpenGL context
     window = glfwCreateWindow(640, 480, "3D Editor", NULL, NULL);
+    // window = glfwCreateWindow(1280, 480, "3D Editor", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -1727,6 +1717,12 @@ int main(void)
         glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
         glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, camera->get_project_mat().data());
 
+        int WindowWidth, WindowHeight;
+        glfwGetWindowSize(window, &WindowWidth, &WindowHeight);
+
+        // right screen
+        glViewport(WindowWidth, 0, WindowWidth, WindowHeight*2);
+
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
             auto flatObj = obj->flattenObj;
@@ -1742,116 +1738,24 @@ int main(void)
                 glUniform1i(program.uniform("isLine"), 0);
                 glDrawArrays(GL_TRIANGLES, 0, 3);
             }
-            // // obj->VAO.bind();
-            // flat->VAO.bind();
-            // program.bindVertexAttribArray("position",flat->VBO_P);
-            // // program.bindVertexAttribArray("position",obj->VBO_P);
-            // // program.bindVertexAttribArray("color",obj->VBO_C);
-            // // program.bindVertexAttribArray("normal",obj->VBO_N);
-            // // Eigen::MatrixXf ModelMat = Eigen::MatrixXf::Identity(4, 4);
-            // // glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, ModelMat.data());
-            // glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
-
-            // glUniform1i(program.uniform("isSelected"), 1);
-            // glUniform1i(program.uniform("isLine"), 0);
-            // glUniform1i(program.uniform("isFlatShading"), 0);
-            
-            // // glDrawArrays(GL_TRIANGLES, 0, flat->flatV.cols());
-            // // glDrawElements(GL_TRIANGLES, flat->IDX.rows(), GL_UNSIGNED_INT, (void*)0);
-            // for (int i = 0; i < flat->F.cols(); i++) {
-            //     glUniform1i(program.uniform("isLine"), 1);
-            //     glDrawElements(GL_LINE_LOOP, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
-            //     glUniform1i(program.uniform("isLine"), 0);
-            //     glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
-            // }
         }
 
-        // for (auto obj: _3d_objs_buffer->_3d_objs) {
-        //     // prepare
-        //     obj->VAO.bind();
-        //     program.bindVertexAttribArray("position",obj->VBO_P);
-        //     program.bindVertexAttribArray("color",obj->VBO_C);
-        //     program.bindVertexAttribArray("normal",obj->VBO_N);
-        //     glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
+        // left screen
+        glViewport(0, 0, WindowWidth, WindowHeight*2);
 
-        //     glUniform1i(program.uniform("isLine"), 0);
-        //     glUniform1i(program.uniform("isFlatShading"), 0);
-
-        //     // Anime
-        //     if (!obj->bc->anime_finish) {
-        //         auto t_now = std::chrono::high_resolution_clock::now();
-        //         double duration = std::chrono::duration_cast<std::chrono::duration<double>>(t_now-t_pre).count();
-        //         t_pre = t_now;
-        //         auto bc = obj->bc;
-        //         if (bc->nxt_curve_pt < bc->curve_points.cols()) {
-        //             Eigen::Vector4f delta = bc->curve_points.col(bc->nxt_curve_pt++) - obj->ModelMat*obj->barycenter;
-        //             AnimeT = Eigen::MatrixXf::Identity(4, 4);
-        //             AnimeT.col(3)(0) = delta(0); AnimeT.col(3)(1) = delta(1); AnimeT.col(3)(2) = delta(2);
-        //             glUniformMatrix4fv(program.uniform("AnimeT"), 1, GL_FALSE, AnimeT.data());
-        //             glUniform1i(program.uniform("isAnime"), 1);
-        //         }
-        //         else {
-        //             playing_cnt -= 1;
-        //             if (playing_cnt == 0) {
-        //                 glUniform1i(program.uniform("isAnime"), 0);
-        //                 glfwSetWindowTitle (window, "animation finished");
-        //             }
-        //             obj->bc->anime_finish = true;
-        //         }
-        //     }
-
-        //     if (obj == _3d_objs_buffer->selected_obj)
-        //         glUniform1i(program.uniform("isSelected"), 1);
-        //     else
-        //         glUniform1i(program.uniform("isSelected"), 0);
-
-        //     if (obj->render_mode == WIREFRAME) {
-        //         glUniform1i(program.uniform("isLine"), 1);
-        //         for (int i = 0; i < obj->meshes.size(); i++) {
-        //             glDrawElements(GL_LINE_LOOP, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
-        //         }
-        //     }
-        //     else if (obj->render_mode == FLAT_SHADING) {
-        //         glUniform1i(program.uniform("isFlatShading"), 1);
-        //         for (int i = 0; i < obj->meshes.size(); i++) {
-        //             glUniform4fv(program.uniform("meshNormal"), 1, obj->meshes[i]->normal.data());
-                    
-        //             glUniform1i(program.uniform("isLine"), 1);
-        //             glDrawElements(GL_LINE_LOOP, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
-        //             glUniform1i(program.uniform("isLine"), 0);
-        //             glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
-        //         }
-        //     }
-        //     else if (obj->render_mode == PHONG_SHADING) {
-        //         glDrawElements(GL_TRIANGLES, obj->IDX.rows(), GL_UNSIGNED_INT, (void*)0);
-        //     }
-
-        //     // cancel Anime Translate for the curve
-        //     glUniform1i(program.uniform("isAnime"), 0);
-
-        //     if (_3d_objs_buffer->selected_obj == obj) {
-        //         glUniform1i(program.uniform("isBezierCurve"), 1);
-        //         // Draw control points if in bezier curve mode
-        //         if (obj->bc->V.cols() > 0) {
-        //             // Draw lines between control points
-        //             obj->bc->VAO.bind();
-        //             program.bindVertexAttribArray("position",obj->bc->VBO_P);
-        //             for (int i = 0; i < obj->bc->V.cols()-1; i++) {
-        //                 glDrawArrays(GL_LINES, i, 2);
-        //             }
-        //             // Draw control points
-        //             program.bindVertexAttribArray("position",obj->bc->VBO_P);
-        //             glDrawArrays(GL_POINTS, 0, obj->bc->V.cols());
-        //             // Draw the curve
-        //             obj->bc->VAO_C.bind();
-        //             program.bindVertexAttribArray("position",obj->bc->VBO_CP);
-        //             for (int i = 0; i < obj->bc->curve_points.cols()-1; i++) {
-        //                 glDrawArrays(GL_LINES, i, 2);
-        //             }
-        //         }
-        //         glUniform1i(program.uniform("isBezierCurve"), 0);
-        //     }
-        // }
+        special_color = (PURPLE.cast<float>())/255.0;
+        glUniform3fv(program.uniform("color"), 1, special_color.data());
+        for (auto obj: _3d_objs_buffer->_3d_objs) {
+            obj->VAO.bind();
+            program.bindVertexAttribArray("position",obj->VBO_P);
+            glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
+            for (int i = 0; i < obj->meshes.size(); i++) {
+                glUniform1i(program.uniform("isLine"), 1);
+                glDrawElements(GL_LINE_LOOP, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
+                glUniform1i(program.uniform("isLine"), 0);
+                glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
+            }
+        }
 
         // Swap front and back buffers
         glfwSwapBuffers(window);
