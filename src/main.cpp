@@ -436,6 +436,10 @@ class FlattenObject {
         Eigen::MatrixXf T_to_ori;
         Eigen::Vector4f barycenter;
 
+        ~FlattenObject() {
+            for (auto mesh: meshes) delete mesh;
+            delete grid;
+        }
         void addEdge(int v1, int v2, Mesh* mesh) {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
             edge2meshes[edge].push_back(mesh);
@@ -495,7 +499,7 @@ class FlattenObject {
                 addNebMeshes(v1, v2, mesh);
                 addNebMeshes(v2, v3, mesh);
                 addNebMeshes(v1, v3, mesh);
-                assert(mesh->nebMeshes.size() == 3);
+                // assert(mesh->nebMeshes.size() == 3);
             }
 
             // std::cout << "created meshes to nebs" << std::endl;
@@ -568,13 +572,15 @@ class FlattenObject {
                 mesh->updateVBOP();
                 // bounding box
                 Eigen::Matrix3f fV = mesh->getFlatV();
-                double x = fV.col(0)(0), y = fV.col(1)(1), z = fV.col(2)(2);
-                if (x > maxx) maxx = x;
-                if (y > maxy) maxy = y;
-                if (z > maxz) maxz = z;
-                if (x < minx) minx = x;
-                if (y < miny) miny = y;
-                if (z < minz) minz = z;
+                for (int i = 0; i < 3; i++) {
+                    double x = fV.col(i)(0), y = fV.col(i)(1), z = fV.col(i)(2);
+                    if (x > maxx) maxx = x;
+                    if (y > maxy) maxy = y;
+                    if (z > maxz) maxz = z;
+                    if (x < minx) minx = x;
+                    if (y < miny) miny = y;
+                    if (z < minz) minz = z;
+                }
             }
             Eigen::MatrixXf bounding_box(4, 2);
             bounding_box << minx, maxx, miny, maxy, minz, maxz, 1, 1;
@@ -873,6 +879,7 @@ class _3dObject {
         double r, s, tx, ty;
         BezierCurve* bc;
         FlattenObject* flattenObj;
+        std::set<int> selectedMeshes;
 
         std::vector<std::vector<Mesh*>> edges;
         std::vector<Mesh*> meshes;
@@ -972,7 +979,8 @@ class _3dObject {
             std::cout << "finish" << std::endl;
 
             // create flatten object
-            this->flattenObj = new FlattenObject(V, IDX);
+            this->flattenObj = nullptr;
+            this->flatten();
         }
         void initial_adjust(Eigen::MatrixXf bounding_box) {
             double maxx = bounding_box.col(1)(0), maxy = bounding_box.col(1)(1), maxz = bounding_box.col(1)(2);
@@ -984,6 +992,7 @@ class _3dObject {
 
             bool intersected = false;
             int cnt = 0;
+            int selectedMeshId;
             for (auto mesh : this->meshes) {
                 Eigen::Vector4f intersection;
                 Eigen::MatrixXf mesh_V(4,3);
@@ -1000,10 +1009,19 @@ class _3dObject {
 
                 if (mesh->getIntersection(ray_origin, ray_direction, intersection, mesh_V)) {
                     intersected = true;
-                    if (intersection == ray_origin) dist = 0;
-                    else dist = std::fmin((intersection-ray_origin).norm(), dist);
+                    double curDist = (intersection-ray_origin).norm();
+                    if (curDist < dist) {
+                        selectedMeshId = cnt;
+                        dist = curDist;
+                    }
                 }
                 cnt++;
+            }
+            if (intersected) {
+                if (this->selectedMeshes.find(selectedMeshId) != selectedMeshes.end())
+                    this->selectedMeshes.erase(selectedMeshId);
+                else
+                    this->selectedMeshes.insert(selectedMeshId);
             }
             return intersected;
         }
@@ -1056,6 +1074,26 @@ class _3dObject {
                 // right cross mul
                 this->ModelMat = this->ModelMat*M;
                 this->ModelMat_T = M_T*this->ModelMat_T;
+            }
+        }
+        void flatten() {
+            // delete first
+            if (this->flattenObj != nullptr) delete this->flattenObj;
+
+            // create a new flatten object using selected meshes
+            // use all meshes if no mesh is selected
+            if (this->selectedMeshes.size() == 0) {
+                this->flattenObj = new FlattenObject(this->V, this->IDX);
+            }
+            else {
+                Eigen::VectorXi selectedIDX(selectedMeshes.size()*3);
+                int i = 0;
+                for (auto meshId: this->selectedMeshes) {
+                    selectedIDX(i++) = this->IDX(meshId*3);
+                    selectedIDX(i++) = this->IDX(meshId*3+1);
+                    selectedIDX(i++) = this->IDX(meshId*3+2);
+                }
+                this->flattenObj = new FlattenObject(this->V, selectedIDX);
             }
         }
 };
@@ -1310,14 +1348,10 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
         Eigen::Vector4f ray_direction;
         if (camera->project_mode == ORTHO) {
             ray_direction = -to_4_vec(camera->forward);
-            std::cout << "ORTHO ray_direction" << std::endl;
-            std::cout << ray_direction << std::endl;
         }
         else if (camera->project_mode == PERSPECT) {
             ray_direction = (click_point-to_4_vec(camera->position)).normalized();
             ray_direction(3) = 0.0;
-            std::cout << "PERSPECT ray_direction" << std::endl;
-            std::cout << ray_direction << std::endl;
         }
         float dist = 0;
         if (_3d_objs_buffer->hit(subWindow, ray_origin, ray_direction, dist)) {
@@ -1486,28 +1520,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 }
             }
             break;
-        // Switch render mode
-        case GLFW_KEY_I:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->switch_render_mode(WIREFRAME)) {
-                    glfwSetWindowTitle (window, "switch render mode to Wire Frame");
-                }
-            }
-            break;
-        case GLFW_KEY_O:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->switch_render_mode(FLAT_SHADING)) {
-                    glfwSetWindowTitle (window, "switch render mode to Flat Shading");
-                }
-            }
-            break;
-        case GLFW_KEY_P:
-            if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->switch_render_mode(PHONG_SHADING)) {
-                    glfwSetWindowTitle (window, "switch render mode to Phong Shading");
-                }
-            }
-            break;
         // Move the camera
         case GLFW_KEY_LEFT:
             if (action == GLFW_PRESS) {
@@ -1568,6 +1580,15 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                     glfwSetWindowTitle (window, "switch to ortho projection");
                 else
                     glfwSetWindowTitle (window, "switch to perspective projection");
+            }
+            break;
+        // flatten the selected 3d object
+        case GLFW_KEY_F:
+            if (action == GLFW_PRESS) {
+                if (_3d_objs_buffer->selected_obj != nullptr) {
+                    glfwSetWindowTitle (window, "flatten the selected 3d object");
+                    _3d_objs_buffer->selected_obj->flatten();
+                }
             }
             break;
         default:
@@ -1733,6 +1754,9 @@ int main(void)
                 program.bindVertexAttribArray("position", mesh->VBO_P);
                 glUniform3fv(program.uniform("color"), 1, mesh->color.data());
 
+                // std::cout << "flatV" << std::endl;
+                // std::cout << mesh->VBO_P.rows << std::endl;
+
                 glUniform1i(program.uniform("isLine"), 1);
                 glDrawArrays(GL_LINE_LOOP, 0, 3);
                 glUniform1i(program.uniform("isLine"), 0);
@@ -1743,13 +1767,20 @@ int main(void)
         // left screen
         glViewport(0, 0, WindowWidth, WindowHeight*2);
 
-        special_color = (PURPLE.cast<float>())/255.0;
-        glUniform3fv(program.uniform("color"), 1, special_color.data());
+        Eigen::Vector3f white = (WHITE.cast<float>())/255.0;
+        // glUniform3fv(program.uniform("color"), 1, special_color.data());
+        Eigen::Vector3f red = (RED.cast<float>())/255.0;
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             obj->VAO.bind();
             program.bindVertexAttribArray("position",obj->VBO_P);
             glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
             for (int i = 0; i < obj->meshes.size(); i++) {
+                if (obj->selectedMeshes.find(i) != obj->selectedMeshes.end()) {
+                    glUniform3fv(program.uniform("color"), 1, red.data());
+                }
+                else {
+                    glUniform3fv(program.uniform("color"), 1, white.data());
+                }
                 glUniform1i(program.uniform("isLine"), 1);
                 glDrawElements(GL_LINE_LOOP, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));
                 glUniform1i(program.uniform("isLine"), 0);
