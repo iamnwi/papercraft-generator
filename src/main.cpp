@@ -11,6 +11,7 @@
 #include <queue>
 #include <set>
 #include <cassert>
+#include <exception>
 
 // OpenGL Helpers to reduce the clutter
 #include "Helpers.h"
@@ -442,10 +443,17 @@ class FlattenObject {
         Eigen::MatrixXf T_to_ori;
         Eigen::Vector4f barycenter;
 
-        ~FlattenObject() {
-            for (auto mesh: meshes) delete mesh;
-            delete grid;
-        }
+        // ~FlattenObject() {
+        //     std::cout << "enter destructor" << std::endl;
+        //     // for (auto mesh: meshes) {
+        //     //     std::cout << "delete meshes" << std::endl;
+        //     //     std::cout << mesh->id << std::endl;
+        //     //     delete mesh;
+        //     // }
+        //     std::cout << "delete gird" << std::endl;
+        //     // delete grid;
+        //     std::cout << "exit destructor" << std::endl;
+        // }
         void addEdge(int v1, int v2, Mesh* mesh) {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
             edge2meshes[edge].push_back(mesh);
@@ -457,10 +465,8 @@ class FlattenObject {
             for (auto nebMesh: edge2meshes[edge]) {
                 if (nebMesh != mesh) {
                     mesh->nebMeshes.push_back(std::make_pair(nebMesh, edge));
-                    // std::cout << mesh->id << "->" << nebMesh->id << std::endl;
                 }
             }
-            // std::cout << mesh->nebMeshes.size() << std::endl;
         }
         bool flattenFirst(Mesh* mesh, std::set<Mesh*> &flatten) {
             int v1 = mesh->vids[0], v2 = mesh->vids[1], v3 = mesh->vids[2];
@@ -476,13 +482,17 @@ class FlattenObject {
             // std::cout << mesh->vid2fv[v3] << std::endl;
             return true;
         }
-        FlattenObject(Eigen::MatrixXf V, Eigen::VectorXi IDX) {
+        FlattenObject(Eigen::MatrixXf V, Eigen::VectorXi IDX, std::vector<bool> &meshFlattened) {
             V.conservativeResize(3, V.cols());
             this->V = V;
 
             // create V and F matrix
+            // std::cout << "create meshes" << std::endl;
             int cidx = 0;
             for (int i = 0; i < IDX.rows(); i += 3) {
+                // std::cout << "check id " << i/3 << std::endl;
+                if (meshFlattened[i/3]) continue;
+                // std::cout << "ok id " << i/3 << std::endl;
                 int v1 = IDX(i), v2 = IDX(i+1), v3 = IDX(i+2);
                 Mesh* newMesh = new Mesh(i/3, V, v1, v2, v3, colors[cidx++ % colors.size()]);
                 meshes.push_back(newMesh);
@@ -493,11 +503,12 @@ class FlattenObject {
                 // std::cout << "id " << newMesh->id << std::endl;
                 // std::cout << "v1, v2, v3" << std::endl;
                 // std::cout << v1 << " " << v2 << " " << v3 << std::endl;
+                // std::cout << newMesh->getV() << std::endl;
             }
 
-            std::cout << "created meshes and edge to meshes" << std::endl;
-            std::cout << "face #: " << meshes.size() << std::endl;
-            std::cout << "edge #: " << edge2meshes.size() << std::endl;
+            // std::cout << "created meshes and edge to meshes" << std::endl;
+            // std::cout << "face #: " << meshes.size() << std::endl;
+            // std::cout << "edge #: " << edge2meshes.size() << std::endl;
 
             // add edge field to mesh objects
             for (auto mesh: meshes) {
@@ -507,19 +518,7 @@ class FlattenObject {
                 addNebMeshes(v1, v3, mesh);
                 // assert(mesh->nebMeshes.size() == 3);
             }
-
             // std::cout << "created meshes to nebs" << std::endl;
-            // std::cout << "mesh color" << std::endl;
-            // for (auto mesh: meshes) {
-            //     std::cout << mesh->id << " -> " << mesh->color << std::endl;
-            // }
-            // std::cout << "check connect" << std::endl;
-            // for (auto mesh: meshes) {
-            //     for(auto meshNedge: mesh->nebMeshes) {
-            //         Mesh* nebMesh = meshNedge.first;
-            //         std::cout << mesh->id << " -> " << nebMesh->id << std::endl;
-            //     }
-            // }
 
             // new a Regular Grid to boost the overlap checking process.
             grid = new Grid();
@@ -567,6 +566,25 @@ class FlattenObject {
                 }
             }
 
+            // clear not flattened mesh from meshes vector
+            // mark flatten meshes
+            // std::cout << "delete unflattened meshes" << std::endl;
+            // for (auto mesh: meshes) {
+            //     if (flattened.find(mesh) == flattened.end()) {
+            //         delete mesh;
+            //     }
+            // }
+            // meshes.clear();
+            // meshes.resize(0);
+            std::vector<Mesh*> tmp;
+            // std::cout << "restore flattened meshes" << std::endl;
+            for (auto mesh: flattened) {
+                meshFlattened[mesh->id] = true;
+                // meshes.push_back(mesh);
+                tmp.push_back(mesh);
+            }
+            meshes = tmp;
+
             // std::cout << "finished flattening" << std::endl;
             // std::cout << "flattened " << flattened.size() << " meshes" << std::endl;
             // std::cout << this->V << std::endl;
@@ -589,6 +607,7 @@ class FlattenObject {
                     if (z < minz) minz = z;
                 }
             }
+            // std::cout << "zoom to fit window" << std::endl;
             Eigen::MatrixXf bounding_box(4, 2);
             bounding_box << minx, maxx, miny, maxy, minz, maxz, 1, 1;
 
@@ -605,10 +624,12 @@ class FlattenObject {
             double scale_factor = fmin(1.0/(maxx-minx), 1.0/(maxy-miny));
             this->translate(delta);
             this->scale(scale_factor);
+            // std::cout << "flattened one island" << std::endl;
         }
         
         bool flattenMesh(Mesh* preMesh, Mesh* mesh, std::pair<int, int> edge, std::set<Mesh*> &flattened) {
             // find the remaining non-flattened vertex
+            // std::cout << "enter flattenMesh" << std::endl;
             int fv1 = edge.first, fv2 = edge.second;
             int v3;
             for (int vid: mesh->vids) {
@@ -628,12 +649,32 @@ class FlattenObject {
             mesh->vid2fv[fv2] = preMesh->vid2fv[fv2];
             mesh->vid2fv[v3] = fv3Pos;
 
+            // std::cout << "exit flattenMesh" << std::endl;
             return true;
         }
 
         // compute the flat position of v3 according to the flat position of v1 and v2
         // check overlap
         bool flattenVertex(Mesh* mesh, int v3, int v1, int v2, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, Eigen::Vector3f &fv3Pos, std::set<Mesh*> &flattened) {
+            // std::cout << "enter flattenVertex" << std::endl;
+            // std::cout << "mesh id = " << mesh->id << std::endl;
+            // std::cout << "mesh v1 " << v1 << std::endl;
+            // std::cout << "mesh vs " << mesh->vids[0] << " " << mesh->vids[1] << " " << mesh->vids[2] << std::endl;
+            // std::cout << "mesh V " << mesh->getV() << std::endl;
+            // try {
+            //     for (auto it: mesh->vid2v) {
+            //         std::cout << "mesh vid2v " << it.first << " " << it.second << std::endl;
+            //     }
+            // }
+            // catch (std::exception e) {
+            //     std::cout << "An exception occurred. Exception Nr. " << e.what() << '\n';
+            // }
+            // for (auto it: mesh->vid2v) {
+            //     std::cout << "mesh vid2v " << it.first << " " << it.second << std::endl;
+            // }
+            // std::cout << "mesh v1" << mesh->vid2v[v1] << std::endl;
+            // std::cout << "mesh v2" << mesh->vid2v[v2] << std::endl;
+            // std::cout << "mesh v3" << mesh->vid2v[v3] << std::endl;
             Eigen::Vector3f flat1, flat2;
             Eigen::Vector3f v1Pos = mesh->vid2v[v1];
             Eigen::Vector3f v2Pos = mesh->vid2v[v2];
@@ -690,6 +731,7 @@ class FlattenObject {
 
         bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<Mesh*> &flattened) {
             // check if any vertices of a flat Triangle inside the other flat Triangle
+            // std::cout << "enter overlap" << std::endl;
             std::vector<Mesh*> *nebMeshes = grid->getCell(flatPos);
             for (auto mesh: *nebMeshes) {
                 Eigen::Matrix3f meshfV = mesh->getFlatV();
@@ -726,10 +768,11 @@ class FlattenObject {
                 if (lineCross(flatPos, fv2Pos, mesh)) return true;
                 // std::cout << "v1-v3 no lineCross" << std::endl;
             }
-
+            // std::cout << "exit overlap" << std::endl;
             return false;
         }
         bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, Mesh* mesh) {
+            // std::cout << "enter lineCross main" << std::endl;
             int ov1, ov2, ov3;
             ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
             if (lineCross(a, b, mesh->vid2fv[ov1], mesh->vid2fv[ov2])) return true;
@@ -738,6 +781,7 @@ class FlattenObject {
             return false;
         }
         bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, Eigen::Vector3f c, Eigen::Vector3f d) {
+            // std::cout << "enter lineCross sub" << std::endl;
             // overlap?
             if (((a-c).norm() < ESP || (a-d).norm() < ESP) && ((b-c).norm() < ESP || (b-d).norm() < ESP)) {
                 // std::cout << "two line overlap" << std::endl;
@@ -768,8 +812,7 @@ class FlattenObject {
             return x(0) > ESP && x(0) < 1.0-ESP && x(1) > ESP && x(1) < 1.0-ESP;
         }
         bool isInside(Eigen::Vector3f flatPos, Eigen::Matrix3f meshfV) {
-            // int v1, v2, v3;
-            // v1 = mesh->vids[0]; v2 = mesh->vids[1]; v3 = mesh->vids[2];
+            // std::cout << "enter isInside" << std::endl;
             Eigen::Vector3f a, b, c;
             a = meshfV.col(0); b = meshfV.col(1); c = meshfV.col(2);
 
@@ -781,20 +824,6 @@ class FlattenObject {
 
             return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
         }
-        // bool isInside(Eigen::Vector3f flatPos, Mesh *mesh) {
-        //     int v1, v2, v3;
-        //     v1 = mesh->vids[0]; v2 = mesh->vids[1]; v3 = mesh->vids[2];
-        //     Eigen::Vector3f a, b, c;
-        //     a = mesh->vid2fv[v1]; b = mesh->vid2fv[v2]; c = mesh->vid2fv[v3];
-
-        //     Eigen::Matrix3d M;
-        //     Eigen::Vector3d R;
-        //     M << a(0),b(0),c(0),  a(1),b(1),c(1), 1,1,1;
-        //     R << flatPos(0), flatPos(1), 1;
-        //     Eigen::Vector3d x = M.colPivHouseholderQr().solve(R);
-
-        //     return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
-        // }
         bool hit(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &dist) {
             bool intersected = false;
             for (auto mesh : this->meshes) {
@@ -885,7 +914,8 @@ class _3dObject {
         int render_mode;
         double r, s, tx, ty;
         BezierCurve* bc;
-        FlattenObject* flattenObj;
+        // FlattenObject* flattenObj;
+        std::vector<FlattenObject*> flattenObjs;
         std::set<int> selectedMeshes;
 
         std::vector<std::vector<Mesh*>> edges;
@@ -986,7 +1016,7 @@ class _3dObject {
             std::cout << "finish" << std::endl;
 
             // create flatten object
-            this->flattenObj = nullptr;
+            // this->flattenObj = nullptr;
             this->flatten();
         }
         void initial_adjust(Eigen::MatrixXf bounding_box) {
@@ -1084,24 +1114,56 @@ class _3dObject {
             }
         }
         void flatten() {
-            // delete first
-            if (this->flattenObj != nullptr) delete this->flattenObj;
+            // delete all flatten object first
+            // std::cout << "delete flattenObjs" << std::endl;
+            // std::cout << "flattenObjs vec size" << this->flattenObjs.size() << std::endl;
+            // for (auto flatObj: this->flattenObjs) delete flatObj;
+            // std::cout << "after delete flattenObjs" << std::endl;
+            // this->flattenObjs.clear();
+            // this->flattenObjs.resize(0);
+            this->flattenObjs = std::vector<FlattenObject*>();
+            // std::cout << "after clear flattenObjs vec" << std::endl;
 
             // create a new flatten object using selected meshes
             // use all meshes if no mesh is selected
+            Eigen::VectorXi selectedIDX;
             if (this->selectedMeshes.size() == 0) {
-                this->flattenObj = new FlattenObject(this->V, this->IDX);
+                selectedIDX = this->IDX;
             }
             else {
-                Eigen::VectorXi selectedIDX(selectedMeshes.size()*3);
+                selectedIDX.resize((selectedMeshes.size()*3));
                 int i = 0;
                 for (auto meshId: this->selectedMeshes) {
                     selectedIDX(i++) = this->IDX(meshId*3);
                     selectedIDX(i++) = this->IDX(meshId*3+1);
                     selectedIDX(i++) = this->IDX(meshId*3+2);
                 }
-                this->flattenObj = new FlattenObject(this->V, selectedIDX);
             }
+            // std::cout << "starts flattening" << std::endl;
+            std::vector<bool> meshFlattened(selectedIDX.rows()/3, false);
+            int flattedCnt = 0;
+            // std::cout << "flatten input V" << std::endl;
+            // std::cout << this->V << std::endl;
+            // std::cout << "flatten input IDX" << std::endl;
+            // std::cout << selectedIDX << std::endl;
+            while (flattedCnt < selectedIDX.rows()/3) {
+                this->flattenObjs.push_back(new FlattenObject(this->V, selectedIDX, meshFlattened));
+                // this->flattenObjs.push_back(new FlattenObject(this->V, this->IDX, meshFlattened));
+                // std::cout << "after one island " << std::endl;
+                auto last = this->flattenObjs[this->flattenObjs.size()-1];
+                // std::cout << "flattenObjs size = " << this->flattenObjs.size() << std::endl;
+                // std::cout << "flattened island size = " << last->meshes.size() << std::endl;
+                // std::cout << "flattened vector = " << std::endl;
+                flattedCnt = 0;
+                for (int i = 0; i < meshFlattened.size(); i++) {
+                    flattedCnt += meshFlattened[i];
+                    // std::cout << meshFlattened[i];
+                }
+                // std::cout << std::endl;
+                // std::cout << "flattened cnt = " << flattedCnt << std::endl;
+            }
+            // std::cout << "this->flattenObjs.size()" << std::endl;
+            // std::cout << this->flattenObjs.size() << std::endl;
         }
 };
 class Cube: public _3dObject {
@@ -1180,10 +1242,17 @@ class _3dObjectBuffer {
                 // find the hitted flat object if any
                 for (auto obj: _3d_objs) {
                     float dist = DIST_MAX;
-                    if (obj->flattenObj->hit(ray_origin, ray_direction, dist)) {
-                        if (selected == nullptr || min_dist > dist) {
-                            min_dist = dist;
-                            selected_flat = obj->flattenObj;
+                    // for (auto flatObj: obj->flattenObjs) {
+                    //     std::cout << "flatObj->meshid" << std::endl;
+                    //     for (auto mesh: flatObj->meshes)
+                    //         std::cout << mesh->id << std::endl;
+                    // }
+                    for (auto flatObj: obj->flattenObjs) {
+                        if (flatObj->hit(ray_origin, ray_direction, dist)) {
+                            if (selected_flat == nullptr || min_dist > dist) {
+                                min_dist = dist;
+                                selected_flat = flatObj;
+                            }
                         }
                     }
                 }
@@ -1195,6 +1264,11 @@ class _3dObjectBuffer {
                 // else if (selected_flat) this->selected_flat_obj = selected_flat;
                 this->selected_obj = selected;
                 this->selected_flat_obj = selected_flat;
+                // if (selected_flat) {
+                //     std::cout << "selected_flat->IDX" << std::endl;
+                //     for (auto mesh: selected_flat->meshes)
+                //             std::cout << mesh->id << std::endl;
+                // }
             }
 
             return selected != nullptr || selected_flat != nullptr;
@@ -1265,7 +1339,9 @@ class _3dObjectBuffer {
         std::string export_flat_svg(Camera *camera) {
             std::stringstream ss;
             for (auto it = _3d_objs.rbegin(); it != _3d_objs.rend(); it++) {
-                ss << (*it)->flattenObj->export_svg(camera) << std::endl;
+                for (auto flatObj: (*it)->flattenObjs) {
+                    ss << flatObj->export_svg(camera) << std::endl;
+                }
             }
             std::string svg_str = ss.str();
             return svg_str;
@@ -1595,6 +1671,8 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 if (_3d_objs_buffer->selected_obj != nullptr) {
                     glfwSetWindowTitle (window, "flatten the selected 3d object");
                     _3d_objs_buffer->selected_obj->flatten();
+                    _3d_objs_buffer->selected_flat_obj = nullptr;
+                    _3d_objs_buffer->selected_obj = nullptr;
                 }
             }
             break;
@@ -1742,6 +1820,13 @@ int main(void)
         tmp(0) = camera->position(0); tmp(1) = camera->position(1); tmp(2) = camera->position(2);
         tmp(3) = 1.0;
         glUniform4fv(program.uniform("viewPosition"), 1, tmp.data());
+        // Eigen::Matrix4f flatView;
+        //     flatView <<
+        //     1.0, 0.0, 0.0, -0.0,
+        //     0.0, 1.0, 0.0, -0.0,
+        //     0.0, 0.0, 1.0, -3.0,
+        //     0.0, 0.0, 0.0, 1.0;
+        // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, flatView.data());
         glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
         glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, camera->get_project_mat().data());
 
@@ -1753,26 +1838,29 @@ int main(void)
 
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
-            auto flatObj = obj->flattenObj;
-            glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj->ModelMat.data());
+            for (auto flatObj: obj->flattenObjs) {
+                // auto flatObj = obj->flattenObj;
+                glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj->ModelMat.data());
 
-            for (auto mesh: flatObj->meshes) {
-                mesh->VAO.bind();
-                program.bindVertexAttribArray("position", mesh->VBO_P);
-                glUniform3fv(program.uniform("color"), 1, mesh->color.data());
+                for (auto mesh: flatObj->meshes) {
+                    mesh->VAO.bind();
+                    program.bindVertexAttribArray("position", mesh->VBO_P);
+                    glUniform3fv(program.uniform("color"), 1, mesh->color.data());
 
-                // std::cout << "flatV" << std::endl;
-                // std::cout << mesh->VBO_P.rows << std::endl;
+                    // std::cout << "flatV" << std::endl;
+                    // std::cout << mesh->VBO_P.rows << std::endl;
 
-                glUniform1i(program.uniform("isLine"), 1);
-                glDrawArrays(GL_LINE_LOOP, 0, 3);
-                glUniform1i(program.uniform("isLine"), 0);
-                glDrawArrays(GL_TRIANGLES, 0, 3);
+                    glUniform1i(program.uniform("isLine"), 1);
+                    glDrawArrays(GL_LINE_LOOP, 0, 3);
+                    glUniform1i(program.uniform("isLine"), 0);
+                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                }
             }
         }
 
         // left screen
         glViewport(0, 0, WindowWidth, WindowHeight*2);
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
 
         Eigen::Vector3f white = (WHITE.cast<float>())/255.0;
         // glUniform3fv(program.uniform("color"), 1, special_color.data());
