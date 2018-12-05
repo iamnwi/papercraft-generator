@@ -531,7 +531,7 @@ class FlattenObject {
                 if (meshFlattened[i/3]) continue;
                 // std::cout << "ok id " << i/3 << std::endl;
                 int v1 = IDX(i), v2 = IDX(i+1), v3 = IDX(i+2);
-                Mesh* newMesh = new Mesh(i/3, V, v1, v2, v3, colors[cidx++ % colors.size()]);
+                Mesh* newMesh = new Mesh(i/3, V, v1, v2, v3, WHITE);
                 meshes.push_back(newMesh);
                 // add edge
                 addEdge(v1, v2, newMesh);
@@ -942,7 +942,6 @@ class _3dObject {
         int render_mode;
         double r, s, tx, ty;
         BezierCurve* bc;
-        // FlattenObject* flattenObj;
         std::vector<FlattenObject*> flattenObjs;
         std::set<int> selectedMeshes;
 
@@ -1541,7 +1540,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         // Add a Fox
         case  GLFW_KEY_5:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "add a bumpy");
+                glfwSetWindowTitle (window, "add a fox");
                 _3d_objs_buffer->add_object(FOX_OFF_PATH);
             }
             break;
@@ -1742,7 +1741,6 @@ int main(void)
 
     // Create a windowed mode window and its OpenGL context
     window = glfwCreateWindow(640, 480, "3D Editor", NULL, NULL);
-    // window = glfwCreateWindow(1280, 480, "3D Editor", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
