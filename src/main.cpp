@@ -66,6 +66,7 @@ class Light {
 };
 class Camera {
     public:
+        Eigen::Matrix4f flatViewMat;
         Eigen::Matrix4f ViewMat;
         Eigen::Matrix4f ortho_mat;
         Eigen::Matrix4f perspect_mat;
@@ -95,6 +96,12 @@ class Camera {
             this->zeta = 0;
             this->radius = 3.0;
 
+            this->flatViewMat << 
+            1.0, 0.0, 0.0, -position(0),
+            0.0, 1.0, 0.0, -position(1),
+            0.0, 0.0, 1.0, -position(2),
+            0.0, 0.0, 0.0, 1.0;
+        
             this->update_camera_pos();
             this->look_at(window);
             this->project_mode = project_mode;
@@ -884,7 +891,7 @@ class FlattenObject {
                 std::string svg_str = get_tri_g_template();
                 Eigen::MatrixXf fV = mesh->getFlatV();
                 fV = mat_to_4(fV);
-                fV = camera->get_project_mat()*camera->ViewMat*ModelMat*fV;
+                fV = camera->get_project_mat()*camera->flatViewMat*ModelMat*fV;
                 std::string ax = std::to_string(fV.col(0).x()), ay = std::to_string(fV.col(0).y());
                 std::string bx = std::to_string(fV.col(1).x()), by = std::to_string(fV.col(1).y());
                 std::string cx = std::to_string(fV.col(2).x()), cy = std::to_string(fV.col(2).y());
@@ -1408,7 +1415,12 @@ Eigen::Vector4f get_click_position(GLFWwindow* window, int &subWindow) {
     if (fabs(p_camera(3)-1.0) > 0.001) {
         p_camera = p_camera/p_camera(3);
     }
-    Eigen::Vector4f p_world = camera->ViewMat.inverse() * p_camera;
+
+    Eigen::Vector4f p_world;
+    if (subWindow == RIGHTSUBWINDOW)
+        p_world = camera->flatViewMat.inverse() * p_camera;
+    else if (subWindow == LEFTSUBWINDOW)
+        p_world = camera->ViewMat.inverse() * p_camera;
 
     return p_world;
 }
@@ -1429,12 +1441,17 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
         Eigen::Vector4f ray_origin = click_point;
         // orth projection
         Eigen::Vector4f ray_direction;
-        if (camera->project_mode == ORTHO) {
-            ray_direction = -to_4_vec(camera->forward);
+        if (subWindow == RIGHTSUBWINDOW) {
+            ray_direction = Eigen::Vector4f(0., 0., -1., 0.);
         }
-        else if (camera->project_mode == PERSPECT) {
-            ray_direction = (click_point-to_4_vec(camera->position)).normalized();
-            ray_direction(3) = 0.0;
+        else {
+            if (camera->project_mode == ORTHO) {
+                ray_direction = -to_4_vec(camera->forward);
+            }
+            else if (camera->project_mode == PERSPECT) {
+                ray_direction = (click_point-to_4_vec(camera->position)).normalized();
+                ray_direction(3) = 0.0;
+            }
         }
         float dist = 0;
         if (_3d_objs_buffer->hit(subWindow, ray_origin, ray_direction, dist)) {
@@ -1820,14 +1837,8 @@ int main(void)
         tmp(0) = camera->position(0); tmp(1) = camera->position(1); tmp(2) = camera->position(2);
         tmp(3) = 1.0;
         glUniform4fv(program.uniform("viewPosition"), 1, tmp.data());
-        // Eigen::Matrix4f flatView;
-        //     flatView <<
-        //     1.0, 0.0, 0.0, -0.0,
-        //     0.0, 1.0, 0.0, -0.0,
-        //     0.0, 0.0, 1.0, -3.0,
-        //     0.0, 0.0, 0.0, 1.0;
-        // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, flatView.data());
-        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->flatViewMat.data());
+        // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
         glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, camera->get_project_mat().data());
 
         int WindowWidth, WindowHeight;

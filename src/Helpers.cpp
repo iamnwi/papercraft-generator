@@ -331,7 +331,7 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 std::string get_svg_root_template() {
   std::string svg_root_template = 
   "<svg xmlns='http://www.w3.org/2000/svg' version='1.200000' width='100%' height='100%' viewBox='-1 -1 2 2' xmlns:xlink='http://www.w3.org/1999/xlink'>\
-    <g transform='matrix(1.0, 0.0, 0.0, $d, 0.0, 0.3)'>\
+    <g transform='matrix(0.5, 0.0, 0.0, $d, 0.0, 0.3)'>\
     $TG\
     </g>\
   </svg>";
