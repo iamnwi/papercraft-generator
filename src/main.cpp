@@ -413,23 +413,53 @@ class Grid {
     public:
         double sizex, sizey;
         std::map<int, std::map<int, std::vector<Mesh*> > > rows;
-        Grid(double sizex = 0.7, double sizey = 0.7) {
+        Grid(double sizex = 0.07, double sizey = 0.07) {
             this->sizex = sizex; this->sizey = sizey;
         }
         void addItem(Mesh* mesh) {
-            for (auto item: mesh->vid2fv) {
-                addItem(item.second, mesh);
+            Eigen::MatrixXf boundingBox = get_bounding_box_2d(mesh->getFlatV());
+            double minx = boundingBox.col(0)(0), maxx = boundingBox.col(1)(0);
+            double miny = boundingBox.col(0)(1), maxy = boundingBox.col(1)(1);
+            double x = minx;
+            std::set<Mesh*> nearMeshes;
+            while (x < maxx+sizex) {
+                double y = miny;
+                while (y < maxy+sizey) {
+                    int r, c;
+                    getCellIdx(x, y, r, c);
+                    if (std::find(rows[r][c].begin(), rows[r][c].end(), mesh) == rows[r][c].end())
+                        rows[r][c].push_back(mesh);
+                    y += sizey;
+                }
+                x += sizex;
             }
         }
-        void addItem(Eigen::Vector3f point, Mesh* mesh) {
-            int row = point.x() / this->sizex;
-            int col = point.y() / this->sizey;
-            this->rows[row][col].push_back(mesh);
+        void getCellIdx(double x, double y, int &r, int &c) {
+            r = int(x/sizex);
+            c = int(y/sizey);
         }
-        std::vector<Mesh*>* getCell(Eigen::Vector3f point) {
-            int row = point.x() / this->sizex;
-            int col = point.y() / this->sizey;
-            return &this->rows[row][col];
+        std::set<Mesh*> getNearMeshes(Eigen::Vector3f A, Eigen::Vector3f B, Eigen::Vector3f C) {
+            // compute bounding box
+            Eigen::Matrix3f V;
+            V << A, B, C;
+            Eigen::MatrixXf boundingBox = get_bounding_box_2d(V);
+            double minx = boundingBox.col(0)(0), maxx = boundingBox.col(1)(0);
+            double miny = boundingBox.col(0)(1), maxy = boundingBox.col(1)(1);
+            double x = minx;
+            std::set<Mesh*> nearMeshes;
+            while (x < maxx+sizex) {
+                double y = miny;
+                while (y < maxy+sizey) {
+                    int r, c;
+                    getCellIdx(x, y, r, c);
+                    for (auto mesh: rows[r][c]) {
+                        nearMeshes.insert(mesh);
+                    }
+                    y += sizey;
+                }
+                x += sizex;
+            }
+            return nearMeshes;
         }
 };
 class FlattenObject {
@@ -739,8 +769,9 @@ class FlattenObject {
         bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<Mesh*> &flattened) {
             // check if any vertices of a flat Triangle inside the other flat Triangle
             // std::cout << "enter overlap" << std::endl;
-            std::vector<Mesh*> *nebMeshes = grid->getCell(flatPos);
-            for (auto mesh: *nebMeshes) {
+            // get all near meshes and combine them to one vector
+            std::set<Mesh*> nearMeshes = grid->getNearMeshes(flatPos, fv1Pos, fv2Pos);
+            for (auto mesh: nearMeshes) {
                 Eigen::Matrix3f meshfV = mesh->getFlatV();
                 if (isInside(flatPos, meshfV)) return true;
                 Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
@@ -757,18 +788,8 @@ class FlattenObject {
                 // std::cout << "not inside" << std::endl;
             }
 
-            // get all near meshes and combine them to one vector
-            std::vector<Mesh*> *v1NebMeshes = grid->getCell(fv1Pos);
-            std::vector<Mesh*> *v2NebMeshes = grid->getCell(fv2Pos);
-            std::set<Mesh*> nearMeshes;
-            for (auto mesh: *nebMeshes) nearMeshes.insert(mesh);
-            for (auto mesh: *v1NebMeshes) nearMeshes.insert(mesh);
-            for (auto mesh: *v2NebMeshes) nearMeshes.insert(mesh);
-
             // check line intersection
             for (auto mesh: nearMeshes) {
-                int ov1, ov2, ov3;
-                ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
                 // std::cout << "compare to mesh " << mesh->id << std::endl;
                 if (lineCross(flatPos, fv1Pos, mesh)) return true;
                 // std::cout << "v1-v2 no lineCross" << std::endl;

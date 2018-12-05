@@ -171,6 +171,7 @@ void _check_gl_error(const char *file, int line);
 
 bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXf &V, Eigen::MatrixXf &C, Eigen::VectorXi &IDX);
 Eigen::MatrixXf get_bounding_box(Eigen::MatrixXf V);
+Eigen::MatrixXf get_bounding_box_2d(Eigen::MatrixXf V);
 Eigen::Vector3f to_3(Eigen::Vector4f X);
 Eigen::Matrix4f LookAtRH( Eigen::Vector3f eye, Eigen::Vector3f target, Eigen::Vector3f up );
 Eigen::MatrixXf get_ortho_matrix(float l, float r, float b, float t, float n, float f);

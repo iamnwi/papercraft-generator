@@ -282,6 +282,24 @@ Eigen::MatrixXf get_bounding_box(Eigen::MatrixXf V) {
   return bounding_box;
 }
 
+Eigen::MatrixXf get_bounding_box_2d(Eigen::MatrixXf V) {
+  // compute bounding box
+  double maxx = -100, maxy = -100;
+  double minx = 100, miny = 100;
+  for (int i = 0; i < V.cols(); i++) {
+      double x = V.col(i)(0), y = V.col(i)(1), z = V.col(i)(2);
+      if (x > maxx) maxx = x;
+      if (y > maxy) maxy = y;
+      if (x < minx) minx = x;
+      if (y < miny) miny = y;
+  }
+  Eigen::MatrixXf bounding_box(2, 2);
+  bounding_box << minx, maxx, miny, maxy;
+  // std::cout << "minx << " " << maxx << " " << miny << " " << maxy" << std::endl;
+  // std::cout << minx << " " << maxx << " " << miny << " " << maxy << std::endl;
+  return bounding_box;
+}
+
 Eigen::MatrixXf get_ortho_matrix(float l, float r, float b, float t, float n, float f) {
   Eigen::Matrix4f ortho = Eigen::MatrixXf::Identity(4,4);
   ortho.col(0)(0) = 2.0/(r-l); ortho.col(3)(0) = -(r+l)/(r-l);
