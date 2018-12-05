@@ -11,7 +11,6 @@
 #include <queue>
 #include <set>
 #include <cassert>
-#include <exception>
 
 // OpenGL Helpers to reduce the clutter
 #include "Helpers.h"
@@ -320,6 +319,10 @@ class Mesh {
         VertexArrayObject VAO;
         VertexBufferObject VBO_P;
 
+        ~Mesh() {
+            std::cout << "enter Mesh destructor" << std::endl;
+            std::cout << "exit Mesh destructor" << std::endl;
+        }
         Mesh(int id, Eigen::MatrixXf V, int v1, int v2, int v3, Eigen::Vector3i color=LIGHTGREY) {
             this->id = id;
             this->color = color.cast<float>()/255.;
@@ -392,6 +395,10 @@ class Mesh {
 };
 class Node {
     public:
+        // ~Node() {
+        //     std::cout << "enter Node destructor" << std::endl;
+        //     std::cout << "exit Node destructor" << std::endl;
+        // }
         double weight;
         std::pair<int, int> edge;
         Mesh *parentMesh, *mesh;
@@ -411,9 +418,13 @@ class CompareWeight {
 };
 class Grid {
     public:
+        ~Grid() {
+            std::cout << "enter Grid destructor" << std::endl;
+            std::cout << "exit Grid destructor" << std::endl;
+        }
         double sizex, sizey;
         std::map<int, std::map<int, std::vector<Mesh*> > > rows;
-        Grid(double sizex = 0.07, double sizey = 0.07) {
+        Grid(double sizex = 0.03, double sizey = 0.03) {
             this->sizex = sizex; this->sizey = sizey;
         }
         void addItem(Mesh* mesh) {
@@ -480,17 +491,17 @@ class FlattenObject {
         Eigen::MatrixXf T_to_ori;
         Eigen::Vector4f barycenter;
 
-        // ~FlattenObject() {
-        //     std::cout << "enter destructor" << std::endl;
-        //     // for (auto mesh: meshes) {
-        //     //     std::cout << "delete meshes" << std::endl;
-        //     //     std::cout << mesh->id << std::endl;
-        //     //     delete mesh;
-        //     // }
-        //     std::cout << "delete gird" << std::endl;
-        //     // delete grid;
-        //     std::cout << "exit destructor" << std::endl;
-        // }
+        ~FlattenObject() {
+            std::cout << "enter FlattenObject destructor" << std::endl;
+            // for (auto mesh: meshes) {
+            //     // std::cout << "delete meshes" << std::endl;
+            //     std::cout << mesh->id << std::endl;
+            // //     delete mesh;
+            // }
+            // std::cout << "delete gird" << std::endl;
+            // delete grid;
+            std::cout << "exit destructor" << std::endl;
+        }
         void addEdge(int v1, int v2, Mesh* mesh) {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
             edge2meshes[edge].push_back(mesh);
@@ -515,8 +526,6 @@ class FlattenObject {
                 return false;
             }
             mesh->vid2fv[v3] = flatPos;
-            // std::cout << "first mesh third point" << std::endl;
-            // std::cout << mesh->vid2fv[v3] << std::endl;
             return true;
         }
         FlattenObject(Eigen::MatrixXf V, Eigen::VectorXi IDX, std::vector<bool> &meshFlattened) {
@@ -524,10 +533,11 @@ class FlattenObject {
             this->V = V;
 
             // create V and F matrix
-            // std::cout << "create meshes" << std::endl;
+            std::cout << "create meshes" << std::endl;
             int cidx = 0;
+            std::vector<Mesh*> meshes;
             for (int i = 0; i < IDX.rows(); i += 3) {
-                // std::cout << "check id " << i/3 << std::endl;
+                std::cout << "check id " << i/3 << std::endl;
                 if (meshFlattened[i/3]) continue;
                 // std::cout << "ok id " << i/3 << std::endl;
                 int v1 = IDX(i), v2 = IDX(i+1), v3 = IDX(i+2);
@@ -543,7 +553,7 @@ class FlattenObject {
                 // std::cout << newMesh->getV() << std::endl;
             }
 
-            // std::cout << "created meshes and edge to meshes" << std::endl;
+            std::cout << "created meshes and edge to meshes" << std::endl;
             // std::cout << "face #: " << meshes.size() << std::endl;
             // std::cout << "edge #: " << edge2meshes.size() << std::endl;
 
@@ -571,7 +581,7 @@ class FlattenObject {
             grid->addItem(meshes[0]);
             dist[meshes[0]->id] = DIST_MAX;
             pq.push(Node(DIST_MAX, std::make_pair(0,0), nullptr, meshes[0]));
-            // std::cout << "flattened first mesh" << std::endl;
+            std::cout << "flattened first mesh" << std::endl;
             // std::cout << "mesh flat V" << std::endl;
             // std::cout << meshes[0]->getFlatV() << std::endl;
             
@@ -588,41 +598,33 @@ class FlattenObject {
                         pq.push(Node(edge2weight[edge], edge, node.mesh, nebMesh));
                     }
                 }
+                std::cout << "find one mesh to flatten " << std::endl;
                 // pop out all meshes that is flatted or cannot be flatted in this island
                 while (!pq.empty() && (flattened.find(pq.top().mesh) != flattened.end() || !flattenMesh(pq.top().parentMesh, pq.top().mesh, pq.top().edge, flattened))) {
                     // std::cout << "pop out mesh " << pq.top().mesh->id << std::endl;
                     pq.pop();
                 }
+                std::cout << "found one " << std::endl;
                 if (!pq.empty()) {
                     node = pq.top();
                     flattened.insert(node.mesh);
                     grid->addItem(node.mesh);
-                    // std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
+                    std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
                     // std::cout << "edge: " << node.edge.first << "-" << node.edge.second << std::endl;
                     // std::cout << "pre mesh flat V" << node.parentMesh->getFlatV() << std::endl;
                 }
             }
 
-            // clear not flattened mesh from meshes vector
-            // mark flatten meshes
-            // std::cout << "delete unflattened meshes" << std::endl;
-            // for (auto mesh: meshes) {
-            //     if (flattened.find(mesh) == flattened.end()) {
-            //         delete mesh;
-            //     }
-            // }
-            // meshes.clear();
-            // meshes.resize(0);
-            std::vector<Mesh*> tmp;
-            // std::cout << "restore flattened meshes" << std::endl;
+            std::cout << "add flattened meshes" << std::endl;
             for (auto mesh: flattened) {
                 meshFlattened[mesh->id] = true;
+                this->meshes.push_back(mesh);
                 // meshes.push_back(mesh);
-                tmp.push_back(mesh);
+                // tmp.push_back(mesh);
             }
-            meshes = tmp;
+            // meshes = tmp;
 
-            // std::cout << "finished flattening" << std::endl;
+            std::cout << "finished flattening" << std::endl;
             // std::cout << "flattened " << flattened.size() << " meshes" << std::endl;
             // std::cout << this->V << std::endl;
 
@@ -942,7 +944,8 @@ class _3dObject {
         int render_mode;
         double r, s, tx, ty;
         BezierCurve* bc;
-        std::vector<FlattenObject*> flattenObjs;
+        FlattenObject* flattenObj;
+        // std::vector<FlattenObject*> flattenObjs;
         std::set<int> selectedMeshes;
 
         std::vector<std::vector<Mesh*>> edges;
@@ -1043,7 +1046,8 @@ class _3dObject {
             std::cout << "finish" << std::endl;
 
             // create flatten object
-            // this->flattenObj = nullptr;
+            this->flattenObj = nullptr;
+            // this->flattenObjs.resize(10);
             this->flatten();
         }
         void initial_adjust(Eigen::MatrixXf bounding_box) {
@@ -1142,13 +1146,14 @@ class _3dObject {
         }
         void flatten() {
             // delete all flatten object first
+            if (this->flattenObj != nullptr) delete this->flattenObj;
             // std::cout << "delete flattenObjs" << std::endl;
             // std::cout << "flattenObjs vec size" << this->flattenObjs.size() << std::endl;
             // for (auto flatObj: this->flattenObjs) delete flatObj;
             // std::cout << "after delete flattenObjs" << std::endl;
             // this->flattenObjs.clear();
             // this->flattenObjs.resize(0);
-            this->flattenObjs = std::vector<FlattenObject*>();
+            // this->flattenObjs = std::vector<FlattenObject>();
             // std::cout << "after clear flattenObjs vec" << std::endl;
 
             // create a new flatten object using selected meshes
@@ -1166,29 +1171,33 @@ class _3dObject {
                     selectedIDX(i++) = this->IDX(meshId*3+2);
                 }
             }
-            // std::cout << "starts flattening" << std::endl;
+            std::cout << "starts flattening" << std::endl;
             std::vector<bool> meshFlattened(selectedIDX.rows()/3, false);
-            int flattedCnt = 0;
+            this->flattenObj = new FlattenObject(this->V, selectedIDX, meshFlattened);
+
+            // int flattedCnt = 0;
             // std::cout << "flatten input V" << std::endl;
             // std::cout << this->V << std::endl;
             // std::cout << "flatten input IDX" << std::endl;
             // std::cout << selectedIDX << std::endl;
-            while (flattedCnt < selectedIDX.rows()/3) {
-                this->flattenObjs.push_back(new FlattenObject(this->V, selectedIDX, meshFlattened));
-                // this->flattenObjs.push_back(new FlattenObject(this->V, this->IDX, meshFlattened));
+            // while (flattedCnt < selectedIDX.rows()/3) {
+                // std::cout << "before one island " << std::endl;
+                // FlattenObject tmp = FlattenObject(this->V, selectedIDX, meshFlattened);
+                // std::cout << "between " << std::endl;
+                // this->flattenObjs.push_back(new FlattenObject(this->V, selectedIDX, meshFlattened));
                 // std::cout << "after one island " << std::endl;
-                auto last = this->flattenObjs[this->flattenObjs.size()-1];
+                // auto last = this->flattenObjs[this->flattenObjs.size()-1];
                 // std::cout << "flattenObjs size = " << this->flattenObjs.size() << std::endl;
                 // std::cout << "flattened island size = " << last->meshes.size() << std::endl;
                 // std::cout << "flattened vector = " << std::endl;
-                flattedCnt = 0;
-                for (int i = 0; i < meshFlattened.size(); i++) {
-                    flattedCnt += meshFlattened[i];
-                    // std::cout << meshFlattened[i];
-                }
+                // flattedCnt = 0;
+                // for (int i = 0; i < meshFlattened.size(); i++) {
+                //     flattedCnt += meshFlattened[i];
+                //     std::cout << meshFlattened[i];
+                // }
                 // std::cout << std::endl;
                 // std::cout << "flattened cnt = " << flattedCnt << std::endl;
-            }
+            // }
             // std::cout << "this->flattenObjs.size()" << std::endl;
             // std::cout << this->flattenObjs.size() << std::endl;
         }
@@ -1270,16 +1279,18 @@ class _3dObjectBuffer {
                 for (auto obj: _3d_objs) {
                     float dist = DIST_MAX;
                     // for (auto flatObj: obj->flattenObjs) {
-                    //     std::cout << "flatObj->meshid" << std::endl;
-                    //     for (auto mesh: flatObj->meshes)
-                    //         std::cout << mesh->id << std::endl;
+                    //     if (flatObj->hit(ray_origin, ray_direction, dist)) {
+                    //         if (selected_flat == nullptr || min_dist > dist) {
+                    //             min_dist = dist;
+                    //             selected_flat = flatObj;
+                    //         }
+                    //     }
                     // }
-                    for (auto flatObj: obj->flattenObjs) {
-                        if (flatObj->hit(ray_origin, ray_direction, dist)) {
-                            if (selected_flat == nullptr || min_dist > dist) {
-                                min_dist = dist;
-                                selected_flat = flatObj;
-                            }
+                    FlattenObject* flatObj = obj->flattenObj;
+                    if (flatObj->hit(ray_origin, ray_direction, dist)) {
+                        if (selected_flat == nullptr || min_dist > dist) {
+                            min_dist = dist;
+                            selected_flat = flatObj;
                         }
                     }
                 }
@@ -1366,9 +1377,10 @@ class _3dObjectBuffer {
         std::string export_flat_svg(Camera *camera) {
             std::stringstream ss;
             for (auto it = _3d_objs.rbegin(); it != _3d_objs.rend(); it++) {
-                for (auto flatObj: (*it)->flattenObjs) {
-                    ss << flatObj->export_svg(camera) << std::endl;
-                }
+                // for (auto flatObj: (*it)->flattenObjs) {
+                //     ss << flatObj->export_svg(camera) << std::endl;
+                // }
+                ss << (*it)->flattenObj->export_svg(camera) << std::endl;
             }
             std::string svg_str = ss.str();
             return svg_str;
@@ -1868,8 +1880,8 @@ int main(void)
 
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
-            for (auto flatObj: obj->flattenObjs) {
-                // auto flatObj = obj->flattenObj;
+            // for (FlattenObject* flatObj: obj->flattenObjs) {
+                auto flatObj = obj->flattenObj;
                 glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj->ModelMat.data());
 
                 for (auto mesh: flatObj->meshes) {
@@ -1885,7 +1897,7 @@ int main(void)
                     glUniform1i(program.uniform("isLine"), 0);
                     glDrawArrays(GL_TRIANGLES, 0, 3);
                 }
-            }
+            // }
         }
 
         // left screen
