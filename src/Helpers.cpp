@@ -295,8 +295,6 @@ Eigen::MatrixXf get_bounding_box_2d(Eigen::MatrixXf V) {
   }
   Eigen::MatrixXf bounding_box(2, 2);
   bounding_box << minx, maxx, miny, maxy;
-  // std::cout << "minx << " " << maxx << " " << miny << " " << maxy" << std::endl;
-  // std::cout << minx << " " << maxx << " " << miny << " " << maxy << std::endl;
   return bounding_box;
 }
 
