@@ -607,34 +607,10 @@ class FlattenObject {
             this->VBO_P.init();
             this->VBO_P.update(this->fV);
 
-            double maxx = -100, maxy = -100, maxz = -100;
-            double minx = 100, miny = 100, minz = 100;
-            for (int i = 0; i < this->fV.cols(); i++) {
-                double x = fV.col(i)(0), y = fV.col(i)(1), z = fV.col(i)(2);
-                if (x > maxx) maxx = x;
-                if (y > maxy) maxy = y;
-                if (z > maxz) maxz = z;
-                if (x < minx) minx = x;
-                if (y < miny) miny = y;
-                if (z < minz) minz = z;
-            }
-            // std::cout << "zoom to fit window" << std::endl;
-            Eigen::MatrixXf bounding_box(4, 2);
-            bounding_box << minx, maxx, miny, maxy, minz, maxz, 1, 1;
-
             // init model fields
             this->ModelMat = Eigen::MatrixXf::Identity(4,4);
             this->T_to_ori = Eigen::MatrixXf::Identity(4,4);
-            this->barycenter = (bounding_box.col(0) + bounding_box.col(1))/2.0;
-
-            // Computer the translate Matrix from barycenter to the origin
-            Eigen::Vector4f delta = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0) - this->barycenter;
-            T_to_ori.col(3)(0) = delta(0); T_to_ori.col(3)(1) = delta(1); T_to_ori.col(3)(2) = delta(2);
-
-            // adjust inital position according to bounding box
-            double scale_factor = fmin(1.0/(maxx-minx), 1.0/(maxy-miny));
-            this->translate(delta);
-            this->scale(scale_factor);
+            this->barycenter = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0);
         }
         
         bool flattenMesh(int preMeshId, int meshId, std::pair<int, int> edge, std::set<int> &flattened) {
@@ -853,6 +829,22 @@ class FlattenObject {
             }
             std::string svg_str = ss.str();
             return svg_str;
+        }
+        void adjustSize(Eigen::MatrixXf boundingBox) {
+            double maxx = boundingBox.col(1)(0), maxy = boundingBox.col(1)(1);
+            double minx = boundingBox.col(0)(0), miny = boundingBox.col(0)(1);
+            Eigen::MatrixXf curBox = get_bounding_box_2d(this->fV);
+            this->barycenter = (curBox.col(0) + curBox.col(1))/2.0;
+            this->barycenter(2) = 0; this->barycenter(3) = 1;
+
+            // Computer the translate Matrix from barycenter to the origin
+            Eigen::Vector4f delta = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0) - this->barycenter;
+            T_to_ori.col(3)(0) = delta(0); T_to_ori.col(3)(1) = delta(1); T_to_ori.col(3)(2) = delta(2);
+
+            // adjust inital position according to bounding box
+            double scale_factor = fmin(1.0/(maxx-minx), 1.0/(maxy-miny));
+            this->translate(delta);
+            this->scale(scale_factor);
         }
 };
 class _3dObject {
@@ -1101,6 +1093,22 @@ class _3dObject {
                     flattedCnt += meshFlattened[i];
                 }
             }
+
+            // scale all islands with a same ratio to fit the window
+            Eigen::MatrixXf boundingBox(2, 2);
+            double deltaY = 0.;
+            for (FlattenObject &flatObj: this->flattenObjs) {
+                Eigen::MatrixXf box = get_bounding_box_2d(flatObj.fV);
+                if (box.col(1)(1)-box.col(0)(1) > deltaY) {
+                    deltaY = box.col(1)(1)-box.col(0)(1);
+                    boundingBox = box;
+                }
+            }
+            std::cout << "island # = " << this->flattenObjs.size() << std::endl;
+            for (FlattenObject &flatObj: this->flattenObjs) {
+                std::cout << "mesh # = " << flatObj.fV.cols()/3 << std::endl;
+                flatObj.adjustSize(boundingBox);
+            }
         }
 };
 class Cube: public _3dObject {
@@ -1179,7 +1187,7 @@ class _3dObjectBuffer {
                 // find the hitted flat object if any
                 for (auto obj: _3d_objs) {
                     float dist = DIST_MAX;
-                    for (auto flatObj: obj->flattenObjs) {
+                    for (auto &flatObj: obj->flattenObjs) {
                         if (flatObj.hit(ray_origin, ray_direction, dist)) {
                             if (selected_flat == nullptr || min_dist > dist) {
                                 min_dist = dist;
@@ -1187,27 +1195,13 @@ class _3dObjectBuffer {
                             }
                         }
                     }
-                    // FlattenObject* flatObj = obj->flattenObj;
-                    // if (flatObj->hit(ray_origin, ray_direction, dist)) {
-                    //     if (selected_flat == nullptr || min_dist > dist) {
-                    //         min_dist = dist;
-                    //         selected_flat = flatObj;
-                    //     }
-                    // }
                 }
             }
             ret_dist = min_dist;
 
             if (mode == CILCK_ACTION) {
-                // if (selected) this->selected_obj = selected;
-                // else if (selected_flat) this->selected_flat_obj = selected_flat;
                 this->selected_obj = selected;
                 this->selected_flat_obj = selected_flat;
-                // if (selected_flat) {
-                //     std::cout << "selected_flat->IDX" << std::endl;
-                //     for (auto mesh: selected_flat->meshes)
-                //             std::cout << mesh->id << std::endl;
-                // }
             }
 
             return selected != nullptr || selected_flat != nullptr;
@@ -1313,7 +1307,6 @@ void export_svg(GLFWwindow* window) {
     svg_file.open ("export.svg");
     svg_file << svg_str;
     svg_file.close();
-    // std::cout << svg_str << std::endl;
 }
 
 void update_window_scale(GLFWwindow* window) {
@@ -1772,7 +1765,6 @@ int main(void)
         Eigen::Vector3f red = (RED.cast<float>())/255.0;
         glUniform4fv(program.uniform("viewPosition"), 1, tmp.data());
         glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->flatViewMat.data());
-        // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
         glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, camera->get_project_mat().data());
 
         int WindowWidth, WindowHeight;
