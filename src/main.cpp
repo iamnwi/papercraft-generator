@@ -82,6 +82,7 @@ class Camera {
         float theta;
         int phi, zeta;
         float radius;
+        int focusWindow;
 
         Camera(GLFWwindow* window, Eigen::Vector3f position=Eigen::Vector3f(0.0, 0.0, 3.0), int project_mode = ORTHO) {
             // set GLOBAL UP to y-axis as default, set look at target as origin(0,0,0)
@@ -104,6 +105,8 @@ class Camera {
             this->update_camera_pos();
             this->look_at(window);
             this->project_mode = project_mode;
+
+            this->focusWindow = LEFTSUBWINDOW;
         }
         void update_camera_pos() {
             float rphi = (PI/180.0)*this->phi, rzeta = (PI/180.0)*this->zeta;
@@ -122,10 +125,29 @@ class Camera {
             this->radius *= factor;
             this->update_camera_pos();
         }
+        void zoom2D(double factor) {
+            this->flatViewMat.col(0)(0) *= factor;
+            this->flatViewMat.col(1)(1) *= factor;
+            this->flatViewMat.col(3)(0) *= factor;
+            this->flatViewMat.col(3)(1) *= factor;
+        }
+        void pan2D(Eigen::Vector4f delta) {
+            this->flatViewMat.col(3) += delta;
+        }
         void reset() {
-            this->phi = 0;
-            this->zeta = 0;
-            this->update_camera_pos();
+            if (this->focusWindow == LEFTSUBWINDOW) {
+                this->phi = 0;
+                this->zeta = 0;
+                this->update_camera_pos();
+            }
+            else {
+                Eigen::Vector3f position = Eigen::Vector3f(0.0, 0.0, 3.0);
+                this->flatViewMat << 
+                    1.0, 0.0, 0.0, -position(0),
+                    0.0, 1.0, 0.0, -position(1),
+                    0.0, 0.0, 1.0, -position(2),
+                    0.0, 0.0, 0.0, 1.0;
+            }
         }
         void look_at(GLFWwindow* window, Eigen::Vector3f target = Eigen::Vector3f(0.0, 0.0, 0.0)) {
             this->forward = (this->position - this->target).normalized();
@@ -411,10 +433,6 @@ class CompareWeight {
 };
 class Grid {
     public:
-        ~Grid() {
-            std::cout << "enter Grid destructor" << std::endl;
-            std::cout << "exit Grid destructor" << std::endl;
-        }
         double sizex, sizey;
         std::map<int, std::map<int, std::vector<int> > > rows;
         Grid(double sizex = 0.03, double sizey = 0.03) {
@@ -532,7 +550,7 @@ class FlattenObject {
                 addEdge(v1, v3, meshId);
             }
 
-            std::cout << "created meshes and edge to meshes" << std::endl;
+            // std::cout << "created meshes and edge to meshes" << std::endl;
             // std::cout << "face #: " << meshes.size() << std::endl;
             // std::cout << "edge #: " << edge2meshes.size() << std::endl;
 
@@ -563,9 +581,9 @@ class FlattenObject {
             grid->addItem(meshes[firstMeshId]);
             dist[firstMeshId] = DIST_MAX;
             pq.push(Node(DIST_MAX, std::make_pair(0,0), 0, firstMeshId));
-            std::cout << "flattened first mesh" << std::endl;
+            // std::cout << "flattened first mesh" << std::endl;
             // std::cout << "mesh flat V" << std::endl;
-            std::cout << meshes[firstMeshId].getFlatV() << std::endl;
+            // std::cout << meshes[firstMeshId].getFlatV() << std::endl;
             
             // max spanning tree, prime algorithm
             while (!pq.empty()) {
@@ -1409,6 +1427,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     // Convert screen position to world coordinates
     int subWindow;
     Eigen::Vector4f click_point = get_click_position(window, subWindow);
+    camera->focusWindow = subWindow;
 
     // Update the position of the first vertex if the left button is pressed
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
@@ -1597,45 +1616,85 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         // Move the camera
         case GLFW_KEY_LEFT:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "rotate camera to left 10 degree");
-                camera->rotate(0, -10);
-                camera->look_at(window);
+                if (camera->focusWindow == LEFTSUBWINDOW) {
+                    glfwSetWindowTitle (window, "rotate camera to left 10 degree");
+                    camera->rotate(0, -10);
+                    camera->look_at(window);
+                }
+                else {
+                    glfwSetWindowTitle (window, "pan camera left 20%");
+                    Eigen::Vector4f delta(2*0.2, 0, 0, 0);
+                    camera->pan2D(delta);
+                }
             }
             break;
         case GLFW_KEY_RIGHT:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "rotate camera to right 10 degree");
-                camera->rotate(0, 10);
-                camera->look_at(window);
+                if (camera->focusWindow == LEFTSUBWINDOW) {
+                    glfwSetWindowTitle (window, "rotate camera to right 10 degree");
+                    camera->rotate(0, 10);
+                    camera->look_at(window);
+                }
+                else {
+                    glfwSetWindowTitle (window, "pan camera right 20%");
+                    Eigen::Vector4f delta(-2*0.2, 0, 0, 0);
+                    camera->pan2D(delta);
+                }
             }
             break;
         case GLFW_KEY_UP:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "rotate camera to up 10 degree");
-                camera->rotate(10, 0);
-                camera->look_at(window);
+                if (camera->focusWindow == LEFTSUBWINDOW) {
+                    glfwSetWindowTitle (window, "rotate camera to up 10 degree");
+                    camera->rotate(10, 0);
+                    camera->look_at(window);
+                }
+                else {
+                    glfwSetWindowTitle (window, "pan camera up 20%");
+                    Eigen::Vector4f delta(0, -2*0.2, 0, 0);
+                    camera->pan2D(delta);
+                }
             }
             break;
         case GLFW_KEY_DOWN:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "rotate camera to down 10 degree");
-                camera->rotate(-10, 0);
-                camera->look_at(window);
+                if (camera->focusWindow == LEFTSUBWINDOW) {
+                    glfwSetWindowTitle (window, "rotate camera to down 10 degree");
+                    camera->rotate(-10, 0);
+                    camera->look_at(window);
+                }
+                else {
+                    glfwSetWindowTitle (window, "pan camera down 20%");
+                    Eigen::Vector4f delta(0, 2*0.2, 0, 0);
+                    camera->pan2D(delta);
+                }
             }
             break;
         // zoom in / zoom out
         case GLFW_KEY_EQUAL:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "zoom in 10%");
-                camera->zoom(0.9);
-                camera->look_at(window);
+                if (camera->focusWindow == LEFTSUBWINDOW) {
+                    glfwSetWindowTitle (window, "right-subwindow zoom in 10%");
+                    camera->zoom(0.9);
+                    camera->look_at(window);
+                }
+                else {
+                    glfwSetWindowTitle (window, "right-subwindow zoom in 20%");
+                    camera->zoom2D(1.2);
+                }
             }
             break;
         case GLFW_KEY_MINUS:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "zoom out 10%");
-                camera->zoom(1.0/0.9);
-                camera->look_at(window);
+                if (camera->focusWindow == LEFTSUBWINDOW) {
+                    glfwSetWindowTitle (window, "left-subwindow zoom out 10%");
+                    camera->zoom(1.0/0.9);
+                    camera->look_at(window);
+                }
+                else {
+                    glfwSetWindowTitle (window, "left-subwindow zoom out 20%");
+                    camera->zoom2D(1.0/1.2);
+                }
             }
             break;
         // reset camera
