@@ -148,7 +148,8 @@ void _check_gl_error(const char *file, int line);
 
 #define PI 3.14159265
 #define BUMPY_CUBE_OFF_PATH "../data/bumpy_cube.off"
-#define BUNNY_OFF_PATH "../data/bunny_remesh.off"
+// #define BUNNY_OFF_PATH "../data/bunny_remesh.off"
+#define BUNNY_OFF_PATH "../data/bunny.off"
 #define CUBE_OFF_PATH "../data/cube.off"
 // #define CUBE_OFF_PATH "../data/cube_desk.off"
 #define BALL_OFF_PATH "../data/ball.off"

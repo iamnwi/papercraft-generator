@@ -313,16 +313,13 @@ class Mesh {
         std::map<int, Eigen::Vector3f> vid2v;
         std::map<int, Eigen::Vector3f> vid2fv;
         std::vector<int> vids;
-        std::vector< std::pair< Mesh*, std::pair<int,int> > > nebMeshes;
+        std::vector< std::pair< int, std::pair<int,int> > > nebMeshes;
         int id;
 
         VertexArrayObject VAO;
         VertexBufferObject VBO_P;
 
-        ~Mesh() {
-            std::cout << "enter Mesh destructor" << std::endl;
-            std::cout << "exit Mesh destructor" << std::endl;
-        }
+        Mesh() {}
         Mesh(int id, Eigen::MatrixXf V, int v1, int v2, int v3, Eigen::Vector3i color=LIGHTGREY) {
             this->id = id;
             this->color = color.cast<float>()/255.;
@@ -395,19 +392,15 @@ class Mesh {
 };
 class Node {
     public:
-        // ~Node() {
-        //     std::cout << "enter Node destructor" << std::endl;
-        //     std::cout << "exit Node destructor" << std::endl;
-        // }
         double weight;
         std::pair<int, int> edge;
-        Mesh *parentMesh, *mesh;
+        int parentMeshId, meshId;
 
-        Node(double weight, std::pair<int, int> edge, Mesh* pa, Mesh* mesh) {
+        Node(double weight, std::pair<int, int> edge, int parentMeshId, int meshId) {
             this->weight = weight;
             this->edge = edge;
-            this->parentMesh = pa;
-            this->mesh = mesh;
+            this->parentMeshId = parentMeshId;
+            this->meshId = meshId;
         }
 };
 class CompareWeight {
@@ -423,23 +416,22 @@ class Grid {
             std::cout << "exit Grid destructor" << std::endl;
         }
         double sizex, sizey;
-        std::map<int, std::map<int, std::vector<Mesh*> > > rows;
+        std::map<int, std::map<int, std::vector<int> > > rows;
         Grid(double sizex = 0.03, double sizey = 0.03) {
             this->sizex = sizex; this->sizey = sizey;
         }
-        void addItem(Mesh* mesh) {
-            Eigen::MatrixXf boundingBox = get_bounding_box_2d(mesh->getFlatV());
+        void addItem(Mesh &mesh) {
+            Eigen::MatrixXf boundingBox = get_bounding_box_2d(mesh.getFlatV());
             double minx = boundingBox.col(0)(0), maxx = boundingBox.col(1)(0);
             double miny = boundingBox.col(0)(1), maxy = boundingBox.col(1)(1);
             double x = minx;
-            std::set<Mesh*> nearMeshes;
             while (x < maxx+sizex) {
                 double y = miny;
                 while (y < maxy+sizey) {
                     int r, c;
                     getCellIdx(x, y, r, c);
-                    if (std::find(rows[r][c].begin(), rows[r][c].end(), mesh) == rows[r][c].end())
-                        rows[r][c].push_back(mesh);
+                    if (std::find(rows[r][c].begin(), rows[r][c].end(), mesh.id) == rows[r][c].end())
+                        rows[r][c].push_back(mesh.id);
                     y += sizey;
                 }
                 x += sizex;
@@ -449,7 +441,7 @@ class Grid {
             r = int(x/sizex);
             c = int(y/sizey);
         }
-        std::set<Mesh*> getNearMeshes(Eigen::Vector3f A, Eigen::Vector3f B, Eigen::Vector3f C) {
+        std::set<int> getNearMeshes(Eigen::Vector3f A, Eigen::Vector3f B, Eigen::Vector3f C) {
             // compute bounding box
             Eigen::Matrix3f V;
             V << A, B, C;
@@ -457,14 +449,14 @@ class Grid {
             double minx = boundingBox.col(0)(0), maxx = boundingBox.col(1)(0);
             double miny = boundingBox.col(0)(1), maxy = boundingBox.col(1)(1);
             double x = minx;
-            std::set<Mesh*> nearMeshes;
+            std::set<int> nearMeshes;
             while (x < maxx+sizex) {
                 double y = miny;
                 while (y < maxy+sizey) {
                     int r, c;
                     getCellIdx(x, y, r, c);
-                    for (auto mesh: rows[r][c]) {
-                        nearMeshes.insert(mesh);
+                    for (int meshId: rows[r][c]) {
+                        nearMeshes.insert(meshId);
                     }
                     y += sizey;
                 }
@@ -475,12 +467,13 @@ class Grid {
 };
 class FlattenObject {
     public:
-        std::vector<Mesh*> meshes;
-        std::map<std::pair<int, int>, std::vector<Mesh*>> edge2meshes;
+        std::map<int, Mesh> meshes;
+        std::map<std::pair<int, int>, std::vector<int>> edge2meshes;
         std::map<std::pair<int, int>, double> edge2weight;
         Grid* grid;
 
         Eigen::MatrixXf V;
+        Eigen::MatrixXf fV;
         Eigen::VectorXi IDX;
 
         VertexArrayObject VAO;
@@ -491,66 +484,52 @@ class FlattenObject {
         Eigen::MatrixXf T_to_ori;
         Eigen::Vector4f barycenter;
 
-        ~FlattenObject() {
-            std::cout << "enter FlattenObject destructor" << std::endl;
-            // for (auto mesh: meshes) {
-            //     // std::cout << "delete meshes" << std::endl;
-            //     std::cout << mesh->id << std::endl;
-            // //     delete mesh;
-            // }
-            // std::cout << "delete gird" << std::endl;
-            // delete grid;
-            std::cout << "exit destructor" << std::endl;
-        }
-        void addEdge(int v1, int v2, Mesh* mesh) {
+        void addEdge(int v1, int v2, int meshId) {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
-            edge2meshes[edge].push_back(mesh);
+            edge2meshes[edge].push_back(meshId);
             if (edge2weight.find(edge) == edge2weight.end())
                 edge2weight[edge] = (V.col(v1)-V.col(v2)).norm();
         }
-        void addNebMeshes(int v1, int v2, Mesh* mesh) {
+        void addNebMeshes(int v1, int v2, int meshId) {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
-            for (auto nebMesh: edge2meshes[edge]) {
-                if (nebMesh != mesh) {
-                    mesh->nebMeshes.push_back(std::make_pair(nebMesh, edge));
+            for (int nebMeshId: edge2meshes[edge]) {
+                if (nebMeshId != meshId) {
+                    meshes[meshId].nebMeshes.push_back(std::make_pair(nebMeshId, edge));
                 }
             }
         }
-        bool flattenFirst(Mesh* mesh, std::set<Mesh*> &flatten) {
-            int v1 = mesh->vids[0], v2 = mesh->vids[1], v3 = mesh->vids[2];
-            float v1v2Len = (mesh->vid2v[v1] - mesh->vid2v[v2]).norm();
-            mesh->vid2fv[v1] = Eigen::Vector3f(0., 0., 0.);
-            mesh->vid2fv[v2] = Eigen::Vector3f(0., v1v2Len, 0.);
+        bool flattenFirst(int meshId, std::set<int> &flatten) {
+            Mesh &mesh = meshes[meshId];
+            int v1 = mesh.vids[0], v2 = mesh.vids[1], v3 = mesh.vids[2];
+            float v1v2Len = (mesh.vid2v[v1] - mesh.vid2v[v2]).norm();
+            mesh.vid2fv[v1] = Eigen::Vector3f(0., 0., 0.);
+            mesh.vid2fv[v2] = Eigen::Vector3f(0., v1v2Len, 0.);
             Eigen::Vector3f flatPos;
-            if (!flattenVertex(mesh, v3, v1, v2, mesh->vid2fv[v1], mesh->vid2fv[v2], flatPos, flatten)) {
+            if (!flattenVertex(meshId, v3, v1, v2, mesh.vid2fv[v1], mesh.vid2fv[v2], flatPos, flatten)) {
                 return false;
             }
-            mesh->vid2fv[v3] = flatPos;
+            mesh.vid2fv[v3] = flatPos;
             return true;
         }
         FlattenObject(Eigen::MatrixXf V, Eigen::VectorXi IDX, std::vector<bool> &meshFlattened) {
             V.conservativeResize(3, V.cols());
             this->V = V;
+            this->fV.resize(3, 0);
 
             // create V and F matrix
             std::cout << "create meshes" << std::endl;
-            int cidx = 0;
-            std::vector<Mesh*> meshes;
+            // std::vector<Mesh*> meshes;
             for (int i = 0; i < IDX.rows(); i += 3) {
-                std::cout << "check id " << i/3 << std::endl;
+                int meshId = i/3;
+                // std::cout << "check id " << i/3 << std::endl;
                 if (meshFlattened[i/3]) continue;
                 // std::cout << "ok id " << i/3 << std::endl;
                 int v1 = IDX(i), v2 = IDX(i+1), v3 = IDX(i+2);
-                Mesh* newMesh = new Mesh(i/3, V, v1, v2, v3, WHITE);
-                meshes.push_back(newMesh);
+                meshes[meshId] = Mesh(meshId, V, v1, v2, v3, WHITE);
                 // add edge
-                addEdge(v1, v2, newMesh);
-                addEdge(v2, v3, newMesh);
-                addEdge(v1, v3, newMesh);
-                // std::cout << "id " << newMesh->id << std::endl;
-                // std::cout << "v1, v2, v3" << std::endl;
-                // std::cout << v1 << " " << v2 << " " << v3 << std::endl;
-                // std::cout << newMesh->getV() << std::endl;
+                addEdge(v1, v2, meshId);
+                addEdge(v2, v3, meshId);
+                addEdge(v1, v3, meshId);
             }
 
             std::cout << "created meshes and edge to meshes" << std::endl;
@@ -558,11 +537,13 @@ class FlattenObject {
             // std::cout << "edge #: " << edge2meshes.size() << std::endl;
 
             // add edge field to mesh objects
-            for (auto mesh: meshes) {
-                int v1 = mesh->vids[0], v2 = mesh->vids[1], v3 = mesh->vids[2];
-                addNebMeshes(v1, v2, mesh);
-                addNebMeshes(v2, v3, mesh);
-                addNebMeshes(v1, v3, mesh);
+            for (auto it: meshes) {
+                int meshId = it.first;
+                Mesh &mesh = it.second;
+                int v1 = mesh.vids[0], v2 = mesh.vids[1], v3 = mesh.vids[2];
+                addNebMeshes(v1, v2, meshId);
+                addNebMeshes(v2, v3, meshId);
+                addNebMeshes(v1, v3, meshId);
                 // assert(mesh->nebMeshes.size() == 3);
             }
             // std::cout << "created meshes to nebs" << std::endl;
@@ -572,79 +553,70 @@ class FlattenObject {
 
             // maximal spaning tree
             std::priority_queue<Node, std::vector<Node>, CompareWeight> pq;
-            std::set<Mesh*> flattened;
-            std::vector<double> dist(meshes.size(), 0.);
+            std::set<int> flattened;
+            std::vector<double> dist(IDX.rows()/3, 0.);
 
             // flat first mesh
-            flattenFirst(meshes[0], flattened);
-            flattened.insert(meshes[0]);
-            grid->addItem(meshes[0]);
-            dist[meshes[0]->id] = DIST_MAX;
-            pq.push(Node(DIST_MAX, std::make_pair(0,0), nullptr, meshes[0]));
+            int firstMeshId = meshes.begin()->first;
+            flattenFirst(firstMeshId, flattened);
+            flattened.insert(firstMeshId);
+            grid->addItem(meshes[firstMeshId]);
+            dist[firstMeshId] = DIST_MAX;
+            pq.push(Node(DIST_MAX, std::make_pair(0,0), 0, firstMeshId));
             std::cout << "flattened first mesh" << std::endl;
             // std::cout << "mesh flat V" << std::endl;
-            // std::cout << meshes[0]->getFlatV() << std::endl;
+            std::cout << meshes[firstMeshId].getFlatV() << std::endl;
             
             // max spanning tree, prime algorithm
             while (!pq.empty()) {
                 auto node = pq.top();
                 pq.pop();
-                for(auto meshNedge: node.mesh->nebMeshes) {
-                    Mesh* nebMesh = meshNedge.first;
+                Mesh &curMesh = meshes[node.meshId];
+                for(auto meshNedge: curMesh.nebMeshes) {
+                    int nebMeshId = meshNedge.first;
                     auto edge = meshNedge.second;
-                    if (flattened.find(nebMesh) == flattened.end() && edge2weight[edge] > dist[nebMesh->id]) {
-                        dist[nebMesh->id] = edge2weight[edge];
-                        // std::cout << "inqueue " << nebMesh->id << std::endl;
-                        pq.push(Node(edge2weight[edge], edge, node.mesh, nebMesh));
+                    if (flattened.find(nebMeshId) == flattened.end() && edge2weight[edge] > dist[nebMeshId]) {
+                        dist[nebMeshId] = edge2weight[edge];
+                        pq.push(Node(edge2weight[edge], edge, curMesh.id, nebMeshId));
                     }
                 }
-                std::cout << "find one mesh to flatten " << std::endl;
                 // pop out all meshes that is flatted or cannot be flatted in this island
-                while (!pq.empty() && (flattened.find(pq.top().mesh) != flattened.end() || !flattenMesh(pq.top().parentMesh, pq.top().mesh, pq.top().edge, flattened))) {
-                    // std::cout << "pop out mesh " << pq.top().mesh->id << std::endl;
+                while (!pq.empty() && (flattened.find(pq.top().meshId) != flattened.end() || !flattenMesh(pq.top().parentMeshId, pq.top().meshId, pq.top().edge, flattened))) {
                     pq.pop();
                 }
-                std::cout << "found one " << std::endl;
                 if (!pq.empty()) {
                     node = pq.top();
-                    flattened.insert(node.mesh);
-                    grid->addItem(node.mesh);
-                    std::cout << "flat mesh " << node.mesh->id << ", preMesh " << node.parentMesh->id << std::endl;
-                    // std::cout << "edge: " << node.edge.first << "-" << node.edge.second << std::endl;
-                    // std::cout << "pre mesh flat V" << node.parentMesh->getFlatV() << std::endl;
+                    flattened.insert(node.meshId);
+                    grid->addItem(meshes[node.meshId]);
                 }
             }
 
-            std::cout << "add flattened meshes" << std::endl;
-            for (auto mesh: flattened) {
-                meshFlattened[mesh->id] = true;
-                this->meshes.push_back(mesh);
-                // meshes.push_back(mesh);
-                // tmp.push_back(mesh);
+            for (int meshId: flattened) {
+                meshFlattened[meshId] = true;
+                Eigen::Matrix3f flatV = meshes[meshId].getFlatV();
+                this->fV.conservativeResize(3, fV.cols()+3);
+                int last = this->fV.cols();
+                this->fV.col(last-3) = flatV.col(0);
+                this->fV.col(last-2) = flatV.col(1);
+                this->fV.col(last-1) = flatV.col(2);
             }
-            // meshes = tmp;
-
-            std::cout << "finished flattening" << std::endl;
-            // std::cout << "flattened " << flattened.size() << " meshes" << std::endl;
-            // std::cout << this->V << std::endl;
 
             // update flat position to VBO, compute bounding box
+            this->VAO.init();
+            this->VAO.bind();
+            this->VBO_P.init();
+            this->VBO_P.update(this->fV);
+
             double maxx = -100, maxy = -100, maxz = -100;
             double minx = 100, miny = 100, minz = 100;
-            for (auto mesh: meshes) {
-                // update VBO
-                mesh->updateVBOP();
-                // bounding box
-                Eigen::Matrix3f fV = mesh->getFlatV();
-                for (int i = 0; i < 3; i++) {
-                    double x = fV.col(i)(0), y = fV.col(i)(1), z = fV.col(i)(2);
-                    if (x > maxx) maxx = x;
-                    if (y > maxy) maxy = y;
-                    if (z > maxz) maxz = z;
-                    if (x < minx) minx = x;
-                    if (y < miny) miny = y;
-                    if (z < minz) minz = z;
-                }
+            for (int i = 0; i < this->fV.cols(); i++) {
+                double x = fV.col(i)(0), y = fV.col(i)(1), z = fV.col(i)(2);
+                if (x > maxx) maxx = x;
+                if (y > maxy) maxy = y;
+                if (z > maxz) maxz = z;
+                if (x < minx) minx = x;
+                if (y < miny) miny = y;
+                if (z < minz) minz = z;
             }
             // std::cout << "zoom to fit window" << std::endl;
             Eigen::MatrixXf bounding_box(4, 2);
@@ -663,15 +635,16 @@ class FlattenObject {
             double scale_factor = fmin(1.0/(maxx-minx), 1.0/(maxy-miny));
             this->translate(delta);
             this->scale(scale_factor);
-            // std::cout << "flattened one island" << std::endl;
         }
         
-        bool flattenMesh(Mesh* preMesh, Mesh* mesh, std::pair<int, int> edge, std::set<Mesh*> &flattened) {
+        bool flattenMesh(int preMeshId, int meshId, std::pair<int, int> edge, std::set<int> &flattened) {
             // find the remaining non-flattened vertex
             // std::cout << "enter flattenMesh" << std::endl;
+            Mesh &preMesh = meshes[preMeshId];
+            Mesh &mesh = meshes[meshId];
             int fv1 = edge.first, fv2 = edge.second;
             int v3;
-            for (int vid: mesh->vids) {
+            for (int vid: mesh.vids) {
                 if (vid != fv1 && vid != fv2) {
                     v3 = vid;
                     break;
@@ -680,13 +653,13 @@ class FlattenObject {
 
             // flatten the remaining vertex v3 according to the flat position of v1 and v2
             Eigen::Vector3f fv3Pos;
-            if (!flattenVertex(mesh, v3, fv1, fv2, preMesh->vid2fv[fv1], preMesh->vid2fv[fv2], fv3Pos, flattened))
+            if (!flattenVertex(meshId, v3, fv1, fv2, preMesh.vid2fv[fv1], preMesh.vid2fv[fv2], fv3Pos, flattened))
                 return false;
 
             // get flat v1 and flat v2 from pre Mesh
-            mesh->vid2fv[fv1] = preMesh->vid2fv[fv1];
-            mesh->vid2fv[fv2] = preMesh->vid2fv[fv2];
-            mesh->vid2fv[v3] = fv3Pos;
+            mesh.vid2fv[fv1] = preMesh.vid2fv[fv1];
+            mesh.vid2fv[fv2] = preMesh.vid2fv[fv2];
+            mesh.vid2fv[v3] = fv3Pos;
 
             // std::cout << "exit flattenMesh" << std::endl;
             return true;
@@ -694,44 +667,21 @@ class FlattenObject {
 
         // compute the flat position of v3 according to the flat position of v1 and v2
         // check overlap
-        bool flattenVertex(Mesh* mesh, int v3, int v1, int v2, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, Eigen::Vector3f &fv3Pos, std::set<Mesh*> &flattened) {
-            // std::cout << "enter flattenVertex" << std::endl;
-            // std::cout << "mesh id = " << mesh->id << std::endl;
-            // std::cout << "mesh v1 " << v1 << std::endl;
-            // std::cout << "mesh vs " << mesh->vids[0] << " " << mesh->vids[1] << " " << mesh->vids[2] << std::endl;
-            // std::cout << "mesh V " << mesh->getV() << std::endl;
-            // try {
-            //     for (auto it: mesh->vid2v) {
-            //         std::cout << "mesh vid2v " << it.first << " " << it.second << std::endl;
-            //     }
-            // }
-            // catch (std::exception e) {
-            //     std::cout << "An exception occurred. Exception Nr. " << e.what() << '\n';
-            // }
-            // for (auto it: mesh->vid2v) {
-            //     std::cout << "mesh vid2v " << it.first << " " << it.second << std::endl;
-            // }
-            // std::cout << "mesh v1" << mesh->vid2v[v1] << std::endl;
-            // std::cout << "mesh v2" << mesh->vid2v[v2] << std::endl;
-            // std::cout << "mesh v3" << mesh->vid2v[v3] << std::endl;
+        bool flattenVertex(int meshId, int v3, int v1, int v2, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, Eigen::Vector3f &fv3Pos, std::set<int> &flattened) {
+            Mesh &mesh = meshes[meshId];
             Eigen::Vector3f flat1, flat2;
-            Eigen::Vector3f v1Pos = mesh->vid2v[v1];
-            Eigen::Vector3f v2Pos = mesh->vid2v[v2];
-            Eigen::Vector3f v3Pos = mesh->vid2v[v3];
+            Eigen::Vector3f v1Pos = mesh.vid2v[v1];
+            Eigen::Vector3f v2Pos = mesh.vid2v[v2];
+            Eigen::Vector3f v3Pos = mesh.vid2v[v3];
             float v1v2Len = (v2Pos - v1Pos).norm();
             float v1v3Len = (v3Pos - v1Pos).norm();
             float v2v3Len = (v3Pos - v2Pos).norm();
-
-            // std::cout << "compute h" << std::endl;
 
             float S = (v2Pos-v1Pos).cross(v3Pos-v1Pos).norm()/2;
             float h = 2*S / v1v2Len;
             float b = sqrt(v1v3Len*v1v3Len - h*h);
             float c = sqrt(v2v3Len*v2v3Len - h*h);
             if (c > v1v2Len && c > b) b = -b;
-
-            // std::cout << "h = " << h << std::endl;
-            // std::cout << "compute fH and flat pos" << std::endl;
             
             // compute flat pos of H and flat pos of v3
             Eigen::Vector3f fH = ((v1v2Len-b)/v1v2Len)*fv1Pos + (b/v1v2Len)*fv2Pos;
@@ -740,41 +690,26 @@ class FlattenObject {
             flat1 = fH + h * flatDir;
             flat2 = fH + h * (-flatDir);
 
-            // std::cout << "fH = " << std::endl << fH << std::endl;
-            // std::cout << "fv1v2 = " << std::endl << fv1v2 << std::endl;
-            // std::cout << "flatDir = " << std::endl << flatDir << std::endl;
-            // std::cout << "-flatDir = " << std::endl << -flatDir << std::endl;
-
             // check overlap
             if (!overlap(flat1, fv1Pos, fv2Pos, flattened)) {
-                // std::cout << "flat1 = " << std::endl << flat1 << std::endl;
                 fv3Pos = flat1;
                 return true;
             }
             else {
-                // std::cout << "flat1 fails" << std::endl;
                 if (!overlap(flat2, fv1Pos, fv2Pos, flattened)) {
-                    // std::cout << "flat2 = " << std::endl << flat2 << std::endl;
                     fv3Pos = flat2;
                     return true;
                 }
-                // std::cout << "flat2 fails" << std::endl;
             }
-            // std::cout << "cannot flat" << std::endl;
-            // std::cout << "flat1" << std::endl;
-            // std::cout << flat1 << std::endl;
-            // std::cout << "flat2" << std::endl;
-            // std::cout << flat2 << std::endl;
             return false;
         }
 
-        bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<Mesh*> &flattened) {
+        bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<int> &flattened) {
             // check if any vertices of a flat Triangle inside the other flat Triangle
-            // std::cout << "enter overlap" << std::endl;
             // get all near meshes and combine them to one vector
-            std::set<Mesh*> nearMeshes = grid->getNearMeshes(flatPos, fv1Pos, fv2Pos);
-            for (auto mesh: nearMeshes) {
-                Eigen::Matrix3f meshfV = mesh->getFlatV();
+            std::set<int> nearMeshes = grid->getNearMeshes(flatPos, fv1Pos, fv2Pos);
+            for (int meshId: nearMeshes) {
+                Eigen::Matrix3f meshfV = meshes[meshId].getFlatV();
                 if (isInside(flatPos, meshfV)) return true;
                 Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
                 if (isInside(center, meshfV)) return true;
@@ -786,48 +721,33 @@ class FlattenObject {
                 if (isInside(meshfV.col(2), curMeshfV)) return true;
                 center = (meshfV.col(0)+meshfV.col(1)+meshfV.col(2))/3.;
                 if (isInside(center, curMeshfV)) return true;
-
-                // std::cout << "not inside" << std::endl;
             }
 
             // check line intersection
-            for (auto mesh: nearMeshes) {
-                // std::cout << "compare to mesh " << mesh->id << std::endl;
-                if (lineCross(flatPos, fv1Pos, mesh)) return true;
-                // std::cout << "v1-v2 no lineCross" << std::endl;
-                if (lineCross(flatPos, fv2Pos, mesh)) return true;
-                // std::cout << "v1-v3 no lineCross" << std::endl;
+            for (int meshId: nearMeshes) {
+                if (lineCross(flatPos, fv1Pos, meshId)) return true;
+                if (lineCross(flatPos, fv2Pos, meshId)) return true;
             }
-            // std::cout << "exit overlap" << std::endl;
             return false;
         }
-        bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, Mesh* mesh) {
-            // std::cout << "enter lineCross main" << std::endl;
+        bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, int meshId) {
+            Mesh &mesh = meshes[meshId];
             int ov1, ov2, ov3;
-            ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
-            if (lineCross(a, b, mesh->vid2fv[ov1], mesh->vid2fv[ov2])) return true;
-            if (lineCross(a, b, mesh->vid2fv[ov2], mesh->vid2fv[ov3])) return true;
-            if (lineCross(a, b, mesh->vid2fv[ov1], mesh->vid2fv[ov3])) return true;
+            ov1 = mesh.vids[0]; ov2 = mesh.vids[1]; ov3 = mesh.vids[2];
+            if (lineCross(a, b, mesh.vid2fv[ov1], mesh.vid2fv[ov2])) return true;
+            if (lineCross(a, b, mesh.vid2fv[ov2], mesh.vid2fv[ov3])) return true;
+            if (lineCross(a, b, mesh.vid2fv[ov1], mesh.vid2fv[ov3])) return true;
             return false;
         }
         bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, Eigen::Vector3f c, Eigen::Vector3f d) {
-            // std::cout << "enter lineCross sub" << std::endl;
             // overlap?
             if (((a-c).norm() < ESP || (a-d).norm() < ESP) && ((b-c).norm() < ESP || (b-d).norm() < ESP)) {
-                // std::cout << "two line overlap" << std::endl;
                 return false;
             }
             // parallel?
             Eigen::Vector3f AB = b-a;
             Eigen::Vector3f CD = d-c;
-            // std::cout << "AB" << std::endl;
-            // std::cout << AB << std::endl;
-            // std::cout << "CD" << std::endl;
-            // std::cout << CD << std::endl;
-            // std::cout << "cross norm" << std::endl;
-            // std::cout << AB.cross(CD).norm() << std::endl;
             if (AB.cross(CD).norm() - 0. < ESP) {
-                // std::cout << "two line parallel" << std::endl;
                 return false;
             }
 
@@ -842,7 +762,6 @@ class FlattenObject {
             return x(0) > ESP && x(0) < 1.0-ESP && x(1) > ESP && x(1) < 1.0-ESP;
         }
         bool isInside(Eigen::Vector3f flatPos, Eigen::Matrix3f meshfV) {
-            // std::cout << "enter isInside" << std::endl;
             Eigen::Vector3f a, b, c;
             a = meshfV.col(0); b = meshfV.col(1); c = meshfV.col(2);
 
@@ -856,23 +775,30 @@ class FlattenObject {
         }
         bool hit(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &dist) {
             bool intersected = false;
-            for (auto mesh : this->meshes) {
-                Eigen::Vector4f intersection;
-                Eigen::MatrixXf mesh_fV(4,3);
-                Eigen::Matrix3f fVmat3 = mesh->getFlatV();
-                mesh_fV << 
-                    fVmat3.row(0),
-                    fVmat3.row(1),
-                    fVmat3.row(2),
-                    1, 1, 1;
-                mesh_fV = this->ModelMat*mesh_fV;
+            // // for (int meshId : this->meshes) {
+            //     // Eigen::Vector4f intersection;
+            //     // Eigen::MatrixXf mesh_fV(4,3);
+            //     // Eigen::Matrix3f fVmat3 = mesh->getFlatV();
+            //     // mesh_fV << 
+            //     //     fVmat3.row(0),
+            //     //     fVmat3.row(1),
+            //     //     fVmat3.row(2),
+            //     //     1, 1, 1;
+            // for (int i = 0; i < this->fV.cols(); i += 3) {
+            //     Eigen::MatrixXf mesh_fV(4,3);
+            //     mesh_fV << 
+            //         this->fV.col(0),
+            //         this->fV.col(1),
+            //         this->fV.col(2),
+            //         1, 1, 1;
+            //     mesh_fV = this->ModelMat*mesh_fV;
 
-                if (mesh->getIntersection(ray_origin, ray_direction, intersection, mesh_fV)) {
-                    intersected = true;
-                    if (intersection == ray_origin) dist = 0;
-                    else dist = std::fmin((intersection-ray_origin).norm(), dist);
-                }
-            }
+            //     if (mesh->getIntersection(ray_origin, ray_direction, intersection, mesh_fV)) {
+            //         intersected = true;
+            //         if (intersection == ray_origin) dist = 0;
+            //         else dist = std::fmin((intersection-ray_origin).norm(), dist);
+            //     }
+            // }
             return intersected;
         }
         void translate(Eigen::Vector4f delta) {
@@ -910,14 +836,15 @@ class FlattenObject {
         }
         std::string export_svg(Camera *camera) {
             std::stringstream ss;
-            for (auto mesh: meshes) {
+            for (int i = 0; i < this->fV.cols(); i += 3) {
+                Eigen::MatrixXf mesh_fV = this->fV.block<3,3>(0,i);
+                mesh_fV = mat_to_4(mesh_fV);
+                mesh_fV = camera->get_project_mat()*camera->flatViewMat*ModelMat*mesh_fV;
+
                 std::string svg_str = get_tri_g_template();
-                Eigen::MatrixXf fV = mesh->getFlatV();
-                fV = mat_to_4(fV);
-                fV = camera->get_project_mat()*camera->flatViewMat*ModelMat*fV;
-                std::string ax = std::to_string(fV.col(0).x()), ay = std::to_string(fV.col(0).y());
-                std::string bx = std::to_string(fV.col(1).x()), by = std::to_string(fV.col(1).y());
-                std::string cx = std::to_string(fV.col(2).x()), cy = std::to_string(fV.col(2).y());
+                std::string ax = std::to_string(mesh_fV.col(0).x()), ay = std::to_string(mesh_fV.col(0).y());
+                std::string bx = std::to_string(mesh_fV.col(1).x()), by = std::to_string(mesh_fV.col(1).y());
+                std::string cx = std::to_string(mesh_fV.col(2).x()), cy = std::to_string(mesh_fV.col(2).y());
                 svg_str = replace_all(svg_str, "$AX", ax); svg_str = replace_all(svg_str, "$AY", ay);
                 svg_str = replace_all(svg_str, "$BX", bx); svg_str = replace_all(svg_str, "$BY", by);
                 svg_str = replace_all(svg_str, "$CX", cx); svg_str = replace_all(svg_str, "$CY", cy);
@@ -944,8 +871,8 @@ class _3dObject {
         int render_mode;
         double r, s, tx, ty;
         BezierCurve* bc;
-        FlattenObject* flattenObj;
-        // std::vector<FlattenObject*> flattenObjs;
+        // FlattenObject* flattenObj;
+        std::vector<FlattenObject> flattenObjs;
         std::set<int> selectedMeshes;
 
         std::vector<std::vector<Mesh*>> edges;
@@ -1046,7 +973,7 @@ class _3dObject {
             std::cout << "finish" << std::endl;
 
             // create flatten object
-            this->flattenObj = nullptr;
+            // this->flattenObj = nullptr;
             // this->flattenObjs.resize(10);
             this->flatten();
         }
@@ -1146,15 +1073,7 @@ class _3dObject {
         }
         void flatten() {
             // delete all flatten object first
-            if (this->flattenObj != nullptr) delete this->flattenObj;
-            // std::cout << "delete flattenObjs" << std::endl;
-            // std::cout << "flattenObjs vec size" << this->flattenObjs.size() << std::endl;
-            // for (auto flatObj: this->flattenObjs) delete flatObj;
-            // std::cout << "after delete flattenObjs" << std::endl;
-            // this->flattenObjs.clear();
-            // this->flattenObjs.resize(0);
-            // this->flattenObjs = std::vector<FlattenObject>();
-            // std::cout << "after clear flattenObjs vec" << std::endl;
+            this->flattenObjs.clear();
 
             // create a new flatten object using selected meshes
             // use all meshes if no mesh is selected
@@ -1173,33 +1092,15 @@ class _3dObject {
             }
             std::cout << "starts flattening" << std::endl;
             std::vector<bool> meshFlattened(selectedIDX.rows()/3, false);
-            this->flattenObj = new FlattenObject(this->V, selectedIDX, meshFlattened);
 
-            // int flattedCnt = 0;
-            // std::cout << "flatten input V" << std::endl;
-            // std::cout << this->V << std::endl;
-            // std::cout << "flatten input IDX" << std::endl;
-            // std::cout << selectedIDX << std::endl;
-            // while (flattedCnt < selectedIDX.rows()/3) {
-                // std::cout << "before one island " << std::endl;
-                // FlattenObject tmp = FlattenObject(this->V, selectedIDX, meshFlattened);
-                // std::cout << "between " << std::endl;
-                // this->flattenObjs.push_back(new FlattenObject(this->V, selectedIDX, meshFlattened));
-                // std::cout << "after one island " << std::endl;
-                // auto last = this->flattenObjs[this->flattenObjs.size()-1];
-                // std::cout << "flattenObjs size = " << this->flattenObjs.size() << std::endl;
-                // std::cout << "flattened island size = " << last->meshes.size() << std::endl;
-                // std::cout << "flattened vector = " << std::endl;
-                // flattedCnt = 0;
-                // for (int i = 0; i < meshFlattened.size(); i++) {
-                //     flattedCnt += meshFlattened[i];
-                //     std::cout << meshFlattened[i];
-                // }
-                // std::cout << std::endl;
-                // std::cout << "flattened cnt = " << flattedCnt << std::endl;
-            // }
-            // std::cout << "this->flattenObjs.size()" << std::endl;
-            // std::cout << this->flattenObjs.size() << std::endl;
+            int flattedCnt = 0;
+            while (flattedCnt < selectedIDX.rows()/3) {
+                this->flattenObjs.push_back(FlattenObject(this->V, selectedIDX, meshFlattened));
+                flattedCnt = 0;
+                for (int i = 0; i < meshFlattened.size(); i++) {
+                    flattedCnt += meshFlattened[i];
+                }
+            }
         }
 };
 class Cube: public _3dObject {
@@ -1278,21 +1179,21 @@ class _3dObjectBuffer {
                 // find the hitted flat object if any
                 for (auto obj: _3d_objs) {
                     float dist = DIST_MAX;
-                    // for (auto flatObj: obj->flattenObjs) {
-                    //     if (flatObj->hit(ray_origin, ray_direction, dist)) {
-                    //         if (selected_flat == nullptr || min_dist > dist) {
-                    //             min_dist = dist;
-                    //             selected_flat = flatObj;
-                    //         }
-                    //     }
-                    // }
-                    FlattenObject* flatObj = obj->flattenObj;
-                    if (flatObj->hit(ray_origin, ray_direction, dist)) {
-                        if (selected_flat == nullptr || min_dist > dist) {
-                            min_dist = dist;
-                            selected_flat = flatObj;
+                    for (auto flatObj: obj->flattenObjs) {
+                        if (flatObj.hit(ray_origin, ray_direction, dist)) {
+                            if (selected_flat == nullptr || min_dist > dist) {
+                                min_dist = dist;
+                                selected_flat = &flatObj;
+                            }
                         }
                     }
+                    // FlattenObject* flatObj = obj->flattenObj;
+                    // if (flatObj->hit(ray_origin, ray_direction, dist)) {
+                    //     if (selected_flat == nullptr || min_dist > dist) {
+                    //         min_dist = dist;
+                    //         selected_flat = flatObj;
+                    //     }
+                    // }
                 }
             }
             ret_dist = min_dist;
@@ -1377,10 +1278,9 @@ class _3dObjectBuffer {
         std::string export_flat_svg(Camera *camera) {
             std::stringstream ss;
             for (auto it = _3d_objs.rbegin(); it != _3d_objs.rend(); it++) {
-                // for (auto flatObj: (*it)->flattenObjs) {
-                //     ss << flatObj->export_svg(camera) << std::endl;
-                // }
-                ss << (*it)->flattenObj->export_svg(camera) << std::endl;
+                for (FlattenObject &flatObj: (*it)->flattenObjs) {
+                    ss << flatObj.export_svg(camera) << std::endl;
+                }
             }
             std::string svg_str = ss.str();
             return svg_str;
@@ -1867,6 +1767,9 @@ int main(void)
         Eigen::Vector4f tmp;
         tmp(0) = camera->position(0); tmp(1) = camera->position(1); tmp(2) = camera->position(2);
         tmp(3) = 1.0;
+        Eigen::Vector3f white = (WHITE.cast<float>())/255.0;
+        // glUniform3fv(program.uniform("color"), 1, special_color.data());
+        Eigen::Vector3f red = (RED.cast<float>())/255.0;
         glUniform4fv(program.uniform("viewPosition"), 1, tmp.data());
         glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->flatViewMat.data());
         // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
@@ -1880,33 +1783,26 @@ int main(void)
 
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
-            // for (FlattenObject* flatObj: obj->flattenObjs) {
-                auto flatObj = obj->flattenObj;
-                glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj->ModelMat.data());
+            for (FlattenObject &flatObj: obj->flattenObjs) {
+                // auto flatObj = obj->flattenObj;
+                glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj.ModelMat.data());
 
-                for (auto mesh: flatObj->meshes) {
-                    mesh->VAO.bind();
-                    program.bindVertexAttribArray("position", mesh->VBO_P);
-                    glUniform3fv(program.uniform("color"), 1, mesh->color.data());
-
-                    // std::cout << "flatV" << std::endl;
-                    // std::cout << mesh->VBO_P.rows << std::endl;
-
+                flatObj.VAO.bind();
+                program.bindVertexAttribArray("position", flatObj.VBO_P);
+                glUniform3fv(program.uniform("color"), 1, white.data());
+                for (int i = 0; i < flatObj.fV.cols(); i += 3) {
                     glUniform1i(program.uniform("isLine"), 1);
-                    glDrawArrays(GL_LINE_LOOP, 0, 3);
+                    glDrawArrays(GL_LINE_LOOP, i, 3);
                     glUniform1i(program.uniform("isLine"), 0);
-                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                    glDrawArrays(GL_TRIANGLES, i, 3);
                 }
-            // }
+            }
         }
 
         // left screen
         glViewport(0, 0, WindowWidth, WindowHeight*2);
         glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
 
-        Eigen::Vector3f white = (WHITE.cast<float>())/255.0;
-        // glUniform3fv(program.uniform("color"), 1, special_color.data());
-        Eigen::Vector3f red = (RED.cast<float>())/255.0;
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             obj->VAO.bind();
             program.bindVertexAttribArray("position",obj->VBO_P);
