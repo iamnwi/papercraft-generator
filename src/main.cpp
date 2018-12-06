@@ -778,7 +778,6 @@ class FlattenObject {
             return intersected;
         }
         void translate(Eigen::Vector4f delta) {
-            // delta = this->Adjust_Mat.inverse()*delta;
             Eigen::MatrixXf T = Eigen::MatrixXf::Identity(4, 4);
             T.col(3)(0) = delta(0); T.col(3)(1) = delta(1); T.col(3)(2) = delta(2);
             this->update_Model_Mat(T, true);
@@ -1095,10 +1094,12 @@ class _3dObject {
             }
 
             // scale all islands with a same ratio to fit the window
+            std::vector<Eigen::Matrix2f> islandsBoxs;
             Eigen::MatrixXf boundingBox(2, 2);
             double deltaY = 0.;
             for (FlattenObject &flatObj: this->flattenObjs) {
                 Eigen::MatrixXf box = get_bounding_box_2d(flatObj.fV);
+                islandsBoxs.push_back(box);
                 if (box.col(1)(1)-box.col(0)(1) > deltaY) {
                     deltaY = box.col(1)(1)-box.col(0)(1);
                     boundingBox = box;
@@ -1107,8 +1108,53 @@ class _3dObject {
             std::cout << "island # = " << this->flattenObjs.size() << std::endl;
             for (FlattenObject &flatObj: this->flattenObjs) {
                 std::cout << "mesh # = " << flatObj.fV.cols()/3 << std::endl;
-                flatObj.adjustSize(boundingBox);
+                // flatObj.adjustSize(boundingBox);
             }
+
+            // arrange the layout of islands on paper
+            double paperL = 0., paperT = 0., paperR = 0., paperB = 0.;
+            double curX = paperL, curY = paperT;
+            double margin = 0.1;
+            for (int i = 0; i < this->flattenObjs.size(); i++) {
+                FlattenObject &flatObj = this->flattenObjs[i];
+                Eigen::Matrix2f box = islandsBoxs[i];
+                double w = box.col(1).x()-box.col(0).x(), h = box.col(1).y()-box.col(0).y();
+                islandMoveTo(paperL, curY, box, flatObj);
+                curY -= h+margin;
+                paperR = fmax(paperR, w);
+                paperB = fmin(paperB, curY);
+            }
+
+            // scale the whole paper to fit the window
+            double scaleFactor = fmin(1.0/(paperT-paperB), 1.0/(paperR-paperL));
+            Eigen::MatrixXf S = Eigen::MatrixXf::Identity(4, 4);
+            S.col(0)(0) = scaleFactor; S.col(1)(1) = scaleFactor;
+            // std::cout << "scaleFactor" << std::endl;
+            // std::cout << scaleFactor << std::endl;
+            for (FlattenObject &flatObj: this->flattenObjs) {
+                flatObj.ModelMat = S*flatObj.ModelMat;
+            }
+
+            // move paper center to the center of the screen
+            // std::cout << "paperL, paperR, paperT, paperBottom" << std::endl;
+            // std::cout << paperL << " " << paperR << " " << paperT << " " << paperB << std::endl;
+            Eigen::Vector4f paperCenter(scaleFactor*(paperL+paperR)/2.0, scaleFactor*(paperT+paperB)/2.0, 0., 1.);
+            // std::cout << "paperCenter" << std::endl;
+            // std::cout << paperCenter << std::endl;
+            Eigen::Vector4f delta = Eigen::Vector4f(0., 0., 0., 1.)-paperCenter;
+            for (FlattenObject &flatObj: this->flattenObjs) {
+                flatObj.translate(delta);
+            }
+        }
+        void islandMoveTo(double l, double t, Eigen::Matrix2f boundBox, FlattenObject &flatObj) {
+            Eigen::Vector2f leftTop = Eigen::Vector2f(l, t);
+            double bminx = boundBox.col(0).x(), bmaxy = boundBox.col(1).y();
+            Eigen::Vector4f bleftTop = Eigen::Vector4f(bminx, bmaxy, 0., 1.);
+            bleftTop = flatObj.ModelMat*bleftTop;
+            Eigen::Vector2f delta = leftTop - Eigen::Vector2f(bleftTop.x(), bleftTop.y());
+            std::cout << "island move delta" << std::endl;
+            std::cout << delta << std::endl;
+            flatObj.translate(Eigen::Vector4f(delta(0), delta(1), 0., 0.));
         }
 };
 class Cube: public _3dObject {
