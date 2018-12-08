@@ -11,6 +11,7 @@
 #include <queue>
 #include <set>
 #include <cassert>
+#include <iomanip>
 
 // OpenGL Helpers to reduce the clutter
 #include "Helpers.h"
@@ -27,14 +28,14 @@
 typedef std::pair<int, int> Edge;
 
 // Contains the vertex positions
-Eigen::MatrixXf V(2,3);
+Eigen::MatrixXd V(2,3);
 
 // Contains the per-vertex color
-Eigen::MatrixXf C(3,3);
+Eigen::MatrixXd C(3,3);
 
 // The view matrix
-// Eigen::MatrixXf ViewMat(4,4);
-Eigen::MatrixXf ProjectMat(4,4);
+// Eigen::MatrixXd ViewMat(4,4);
+Eigen::MatrixXd ProjectMat(4,4);
 
 // Color, order in Key1 to Key9
 Eigen::Vector3i RED(255, 0, 0);
@@ -51,49 +52,49 @@ Eigen::Vector3i LIGHTGREY(200,200,200);
 std::vector<Eigen::Vector3i> colors = {RED, GREEN, YELLOW, WHITE, LIGHTGREY, ORANGE, PURPLE};
 
 // Flags
-float pre_aspect_ratio = -1;
+double pre_aspect_ratio = -1;
 bool pre_aspect_is_x = false;
 bool drag = false;
-float hit_dist;
-Eigen::Vector4f pre_cursor_point;
+double hit_dist;
+Eigen::Vector4d pre_cursor_point;
 
 class Light {
     public:
-        Eigen::Vector4f position;
-        Eigen::Vector3f intensity; // default (1,1,1)
-        Light(Eigen::Vector4f position, Eigen::Vector3f intensity = Eigen::Vector3f(1,1,1)) {
+        Eigen::Vector4d position;
+        Eigen::Vector3d intensity; // default (1,1,1)
+        Light(Eigen::Vector4d position, Eigen::Vector3d intensity = Eigen::Vector3d(1,1,1)) {
             this->position = position; this->intensity = intensity;
         }
 };
 class Camera {
     public:
-        Eigen::Matrix4f flatViewMat;
-        Eigen::Matrix4f ViewMat;
-        Eigen::Matrix4f ortho_mat;
-        Eigen::Matrix4f perspect_mat;
-        Eigen::Vector3f position;
-        Eigen::Vector3f global_up;
-        Eigen::Vector3f up;
-        Eigen::Vector3f right;
-        Eigen::Vector3f forward;
-        Eigen::Vector3f target;
+        Eigen::Matrix4d flatViewMat;
+        Eigen::Matrix4d ViewMat;
+        Eigen::Matrix4d ortho_mat;
+        Eigen::Matrix4d perspect_mat;
+        Eigen::Vector3d position;
+        Eigen::Vector3d global_up;
+        Eigen::Vector3d up;
+        Eigen::Vector3d right;
+        Eigen::Vector3d forward;
+        Eigen::Vector3d target;
 
         // bounding box
-        float n, f, t, b, r, l;
+        double n, f, t, b, r, l;
         int project_mode;
-        float theta;
+        double theta;
         int phi, zeta;
-        float radius;
+        double radius;
         int focusWindow;
 
-        Camera(GLFWwindow* window, Eigen::Vector3f position=Eigen::Vector3f(0.0, 0.0, 3.0), int project_mode = ORTHO) {
+        Camera(GLFWwindow* window, Eigen::Vector3d position=Eigen::Vector3d(0.0, 0.0, 3.0), int project_mode = ORTHO) {
             // set GLOBAL UP to y-axis as default, set look at target as origin(0,0,0)
-            this->global_up = Eigen::Vector3f(0.0, 1.0, 0.0);
+            this->global_up = Eigen::Vector3d(0.0, 1.0, 0.0);
             this->n = 2.0; this->f = 100.0;
             // FOV angle is hardcoded to 60 degrees
             this->theta = (PI/180) * 60;
             // trackball
-            this->target = Eigen::Vector3f(0.0, 0.0, 0.0);
+            this->target = Eigen::Vector3d(0.0, 0.0, 0.0);
             this->phi = 0;
             this->zeta = 0;
             this->radius = 3.0;
@@ -111,12 +112,12 @@ class Camera {
             this->focusWindow = LEFTSUBWINDOW;
         }
         void update_camera_pos() {
-            float rphi = (PI/180.0)*this->phi, rzeta = (PI/180.0)*this->zeta;
-            float y = this->radius * sin(rphi);
-            float x = this->radius * sin(rzeta) * cos(rphi);
-            float z = this->radius * cos(rzeta) * cos(rphi);
+            double rphi = (PI/180.0)*this->phi, rzeta = (PI/180.0)*this->zeta;
+            double y = this->radius * sin(rphi);
+            double x = this->radius * sin(rzeta) * cos(rphi);
+            double z = this->radius * cos(rzeta) * cos(rphi);
 
-            this->position = Eigen::Vector3f(x, y, z);
+            this->position = Eigen::Vector3d(x, y, z);
         }
         void rotate(int dPhi, int dZeta) {
             this->phi = (this->phi+dPhi+360) % 360;
@@ -133,7 +134,7 @@ class Camera {
             this->flatViewMat.col(3)(0) *= factor;
             this->flatViewMat.col(3)(1) *= factor;
         }
-        void pan2D(Eigen::Vector4f delta) {
+        void pan2D(Eigen::Vector4d delta) {
             this->flatViewMat.col(3) += delta;
         }
         void reset() {
@@ -143,7 +144,7 @@ class Camera {
                 this->update_camera_pos();
             }
             else {
-                Eigen::Vector3f position = Eigen::Vector3f(0.0, 0.0, 3.0);
+                Eigen::Vector3d position = Eigen::Vector3d(0.0, 0.0, 3.0);
                 this->flatViewMat << 
                     1.0, 0.0, 0.0, -position(0),
                     0.0, 1.0, 0.0, -position(1),
@@ -151,10 +152,10 @@ class Camera {
                     0.0, 0.0, 0.0, 1.0;
             }
         }
-        void look_at(GLFWwindow* window, Eigen::Vector3f target = Eigen::Vector3f(0.0, 0.0, 0.0)) {
+        void look_at(GLFWwindow* window, Eigen::Vector3d target = Eigen::Vector3d(0.0, 0.0, 0.0)) {
             this->forward = (this->position - this->target).normalized();
             // special case when forward is parallel to global up
-            float dotVal = this->global_up.dot(this->forward);
+            double dotVal = this->global_up.dot(this->forward);
             if (this->phi == 90 || this->phi == 270) {
                 this->right = (this->up.cross(this->forward).normalized());
             }
@@ -167,14 +168,14 @@ class Camera {
             this->up = this->forward.cross(this->right);
 
             auto w = this->forward, u = this->right, v = this->up;
-            Eigen::Matrix4f LOOK;
+            Eigen::Matrix4d LOOK;
             LOOK <<
             u(0), u(1), u(2), 0.0,
             v(0), v(1), v(2), 0.0,
             w(0), w(1), w(2), 0.0,
             0.0,   0.0, 0.0,  1.0;
 
-            Eigen::Matrix4f AT;
+            Eigen::Matrix4d AT;
             AT <<
             1.0, 0.0, 0.0, -this->position(0),
             0.0, 1.0, 0.0, -this->position(1),
@@ -185,15 +186,15 @@ class Camera {
 
             this->update_project_mat(window);
         }
-        Eigen::Vector3f to_world_point(Eigen::Vector3f screen_point) {
-            Eigen::Vector3f global_x, global_y, global_z;
+        Eigen::Vector3d to_world_point(Eigen::Vector3d screen_point) {
+            Eigen::Vector3d global_x, global_y, global_z;
             global_x << 1.0, 0.0, 0.0;
             global_y << 0.0, 1.0, 0.0;
             global_z << 0.0, 0.0, 1.0;
             double xworld = screen_point.dot(global_x);
             double yworld = screen_point.dot(global_y);
             double zworld = screen_point.dot(global_z);
-            return Eigen::Vector3f(xworld, yworld, zworld);
+            return Eigen::Vector3d(xworld, yworld, zworld);
         }
         void switch_project_mode() {
             this->project_mode *= -1;
@@ -222,7 +223,7 @@ class Camera {
             0., 0.,             -(f+n)/(f-n), (-2*f*n)/(f-n),
             0., 0.,             -1.,            0;
         }
-        Eigen::Matrix4f get_project_mat() {
+        Eigen::Matrix4d get_project_mat() {
             if (this->project_mode == ORTHO) return this->ortho_mat;
             return this->perspect_mat;
         }
@@ -230,38 +231,38 @@ class Camera {
 class RayTracer {
     public:
         std::vector<Light*> lights;
-        void add_light(Eigen::Vector4f position) {
+        void add_light(Eigen::Vector4d position) {
             this->lights.push_back(new Light(position));
         }
-        Eigen::Vector3f get_diffuse_color(Eigen::Vector4f vpos, Eigen::Vector4f meshNormals, Eigen::Vector3f color, Eigen::MatrixXf ModelMat) {
+        Eigen::Vector3d get_diffuse_color(Eigen::Vector4d vpos, Eigen::Vector4d meshNormals, Eigen::Vector3d color, Eigen::MatrixXd ModelMat) {
             auto light = this->lights[0];
             // ambinet
-            float ambientStrength = 0.01;
-            Eigen::Vector3f ambient = ambientStrength * light->intensity;
+            double ambientStrength = 0.01;
+            Eigen::Vector3d ambient = ambientStrength * light->intensity;
             //diffuse
-            Eigen::Matrix3f diffuse_mat;
+            Eigen::Matrix3d diffuse_mat;
             diffuse_mat <<  color(0), 0, 0,
                             0, color(1), 0,
                             0, 0, color(2);
-            // Eigen::Matrix4f normalMatrix = (ModelMat.inverse()).transpose();
-            // Eigen::Vector4f normal = (normalMatrix * meshNormals).normalized();
-            Eigen::Vector4f normal = meshNormals;
-            Eigen::Vector4f surfaceToLight = light->position - vpos;
-            // float brightness = normal.dot(surfaceToLight) / (surfaceToLight.norm() * surfaceToLight.norm());
-            float brightness = normal.dot(surfaceToLight);
+            // Eigen::Matrix4d normalMatrix = (ModelMat.inverse()).transpose();
+            // Eigen::Vector4d normal = (normalMatrix * meshNormals).normalized();
+            Eigen::Vector4d normal = meshNormals;
+            Eigen::Vector4d surfaceToLight = light->position - vpos;
+            // double brightness = normal.dot(surfaceToLight) / (surfaceToLight.norm() * surfaceToLight.norm());
+            double brightness = normal.dot(surfaceToLight);
             brightness = fmax(brightness, 0.);
-            Eigen::Vector3f diffuse = diffuse_mat * light->intensity * brightness;
-            Eigen::Vector3f result = ambient + diffuse;
+            Eigen::Vector3d diffuse = diffuse_mat * light->intensity * brightness;
+            Eigen::Vector3d result = ambient + diffuse;
             return result;
         }
 };
 class BezierCurve {
     public:
-        Eigen::MatrixXf V;
+        Eigen::MatrixXd V;
         VertexArrayObject VAO;
         VertexBufferObject VBO_P;
 
-        Eigen::MatrixXf curve_points;
+        Eigen::MatrixXd curve_points;
         VertexArrayObject VAO_C;
         VertexBufferObject VBO_CP;
 
@@ -290,7 +291,7 @@ class BezierCurve {
             // this->control_points.push_back(new Circle(x, y, z));
             this->V.conservativeResize(V.rows(), V.cols()+1);
             this->V.col(V.cols()-1) << x, y, z, 1.;
-            this->VBO_P.update(this->V);
+            this->VBO_P.update(m_to_float(this->V));
             this->update_BP();
         }
         void update_BP() {
@@ -300,73 +301,80 @@ class BezierCurve {
             this->curve_points.resize(curve_points.rows(), line_amount+1);
             for (int i = 0; i <= line_amount; i += 1) {
                 double t = i*delta;
-                Eigen::Vector4f p = get_BP_at(t);
-                this->curve_points.col(i) << Eigen::Vector4f(p(0), p(1), p(2), 1.);
+                Eigen::Vector4d p = get_BP_at(t);
+                this->curve_points.col(i) << Eigen::Vector4d(p(0), p(1), p(2), 1.);
                 // this->curve_points.col(i) << p;
             }
-            this->VBO_CP.update(this->curve_points);
+            this->VBO_CP.update(m_to_float(this->curve_points));
         }
-        Eigen::Vector4f get_BP_at(double t) {
-            Eigen::MatrixXf CP = this->V;
+        Eigen::Vector4d get_BP_at(double t) {
+            Eigen::MatrixXd CP = this->V;
             return get_BP(t, CP, CP.cols());
         }
-        Eigen::Vector4f get_BP(double t, Eigen::MatrixXf CP, int n) {
+        Eigen::Vector4d get_BP(double t, Eigen::MatrixXd CP, int n) {
             if (n == 1) return CP.col(0);
             for (int i = 0; i < n-1; i++) {
                 CP.col(i) = (1-t)*CP.col(i) + t*CP.col(i+1);
             }
             return get_BP(t, CP, n-1);
         }
-        bool translate(Eigen::Vector4f delta, int point_idx) {
+        bool translate(Eigen::Vector4d delta, int point_idx) {
             if (point_idx >= this->V.cols()) return false;
             this->V.col(point_idx) += delta;
             // this->control_points[point_idx]->translate(delta(0), delta(1), delta(2));
-            this->VBO_P.update(this->V);
+            this->VBO_P.update(m_to_float(this->V));
             this->update_BP();
             return true;
         }
 };
 class Mesh {
     public:
-        Eigen::Vector3f color;
+        Eigen::Vector3d color;
 
-        Eigen::Vector4f centroid;
+        Eigen::Vector4d centroid;
         double r, s, tx, ty;
-        Eigen::Vector4f normal;
+        Eigen::Vector4d normal;
 
-        std::map<int, Eigen::Vector3f> vid2v;
-        std::map<int, Eigen::Vector3f> vid2fv;
+        std::map<int, Eigen::Vector3d> vid2v;
+        std::map<int, Eigen::Vector3d> vid2fv;
         std::vector<int> vids;
         std::vector< std::pair< int, std::pair<int,int> > > nebMeshes;
         int id;
 
-        Eigen::Matrix4f R;
-        Eigen::Matrix4f accR;
-        Eigen::Matrix4f animeM;
+        Eigen::Matrix4d R;
+        Eigen::Matrix4d accR;
+        Eigen::Matrix4d animeM;
         Mesh* parent;
         std::vector<Mesh*> childs;
         Edge rotEdge;
-        Eigen::Vector3f rotAixs;
-        Eigen::Vector3f edgeA;
-        Eigen::Vector3f edgeB;
+        Eigen::Vector3d rotAixs;
+        Eigen::Vector3d edgeA;
+        Eigen::Vector3d edgeB;
         double rotAngle;
+        double rotRad;
+        double rotSign;
+        double rotDot;
 
         VertexArrayObject VAO;
         VertexBufferObject VBO_P;
 
         Mesh() {}
-        Mesh(int id, Eigen::MatrixXf V, int v1, int v2, int v3, Eigen::Vector3i color=LIGHTGREY) {
+        Mesh(int id, Eigen::MatrixXd V, int v1, int v2, int v3, Eigen::Vector3i color=LIGHTGREY) {
             this->id = id;
-            this->color = color.cast<float>()/255.;
+            this->color = color.cast<double>()/255.;
             this->vids.push_back(v1); this->vids.push_back(v2); this->vids.push_back(v3);
             this->vid2v[v1] = V.col(v1); this->vid2v[v2] = V.col(v2); this->vid2v[v3] = V.col(v3);
             // init flat position
-            Eigen::Vector3f zero = Eigen::VectorXf::Zero(3);
+            Eigen::Vector3d zero = Eigen::VectorXd::Zero(3);
             this->vid2fv[v1] = zero; this->vid2fv[v2] = zero; this->vid2fv[v3] = zero;
-            this->accR = Eigen::MatrixXf::Identity(4,4);
-            this->R = Eigen::MatrixXf::Identity(4,4);
-            this->animeM = Eigen::MatrixXf::Identity(4,4);
+            this->accR = Eigen::MatrixXd::Identity(4,4);
+            this->R = Eigen::MatrixXd::Identity(4,4);
+            this->animeM = Eigen::MatrixXd::Identity(4,4);
             this->parent = nullptr;
+            this->rotAngle = 0.;
+            this->rotRad = 0.;
+            this->rotDot = 0.;
+            this->rotSign = 1;
 
             this->VAO.init();
             this->VAO.bind();
@@ -375,38 +383,38 @@ class Mesh {
         }
         void updateVBOP() {
             int v1 = vids[0], v2 = vids[1], v3 = vids[2];
-            Eigen::Matrix3f fV;
+            Eigen::Matrix3d fV;
             fV << vid2fv[v1], vid2fv[v2], vid2fv[v3];
-            this->VBO_P.update(fV);
+            this->VBO_P.update(m_to_float(fV));
         }
-        Eigen::Matrix3f getFlatV() {
+        Eigen::Matrix3d getFlatV() {
             int v1 = vids[0], v2 = vids[1], v3 = vids[2];
-            Eigen::Matrix3f fV;
+            Eigen::Matrix3d fV;
             fV << vid2fv[v1], vid2fv[v2], vid2fv[v3];
             return fV;
         }
-        Eigen::Matrix3f getV() {
+        Eigen::Matrix3d getV() {
             int v1 = vids[0], v2 = vids[1], v3 = vids[2];
-            Eigen::Matrix3f V;
+            Eigen::Matrix3d V;
             V << vid2v[v1], vid2v[v2], vid2v[v3];
             return V;
         }
-        Mesh(Eigen::MatrixXf V, Eigen::MatrixXf bounding_box, Eigen::Vector3i color=LIGHTGREY) {
+        Mesh(Eigen::MatrixXd V, Eigen::MatrixXd bounding_box, Eigen::Vector3i color=LIGHTGREY) {
             this->r = 0; this->s = 1; this->tx = 0; this->ty = 0;
-            this->color = color.cast<float>();
+            this->color = color.cast<double>();
             
             auto a = to_3(V.col(0)), b = to_3(V.col(1)), c = to_3(V.col(2));
             auto tmp = ((b-a).cross(c-a)).normalized();
-            this->normal = Eigen::Vector4f(tmp(0), tmp(1), tmp(2), 0.0);
+            this->normal = Eigen::Vector4d(tmp(0), tmp(1), tmp(2), 0.0);
             // Computer the barycenter(centroid) of the Mesh, alphea:beta:gamma = 1:1:1
-            Eigen::Vector4f A = V.col(0), B = V.col(1), C = V.col(2);
+            Eigen::Vector4d A = V.col(0), B = V.col(1), C = V.col(2);
             this->centroid = (1.0/3)*A + (1.0/3)*B + (1.0/3)*C;
         }
-        bool getIntersection(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, Eigen::Vector4f &intersection, Eigen::MatrixXf V) {
+        bool getIntersection(Eigen::Vector4d ray_origin, Eigen::Vector4d ray_direction, Eigen::Vector4d &intersection, Eigen::MatrixXd V) {
             // solve equation:     e + td = a + u(b-a) + v(c-a)
             //                     (a-b)u + (a-c)v + dt = a-e
-            Eigen::Vector4f a = V.col(0), b = V.col(1), c = V.col(2);
-            Eigen::Vector4f d = ray_direction, e = ray_origin;
+            Eigen::Vector4d a = V.col(0), b = V.col(1), c = V.col(2);
+            Eigen::Vector4d d = ray_direction, e = ray_origin;
             double ai = (a-b)(0), di = (a-c)(0), gi = (d)(0);
             double bi = (a-b)(1), ei = (a-c)(1), hi = (d)(1);
             double ci = (a-b)(2), fi = (a-c)(2), ii = (d)(2);
@@ -428,7 +436,7 @@ class Mesh {
             if (xv < 0 || xv+xu > 1) return false;
             return true;
         }
-        Eigen::Vector3f getH(Edge edge) {
+        Eigen::Vector3d getH(Edge edge) {
             int v1 = edge.first, v2 = edge.second;
             int v3;
             for (int vid: vids) {
@@ -436,9 +444,11 @@ class Mesh {
                     v3 = vid; break;
                 }
             }
-            Eigen::Vector3f aixs = (vid2v[v2]-vid2v[v1]).normalized();
-            Eigen::Vector3f vec = vid2v[v3]-vid2v[v1];
-            Eigen::Vector3f h = get_vertical_vec(vec, aixs);
+            // Eigen::Vector3d aixs = (vid2v[v2]-vid2v[v1]).normalized();
+            // Eigen::Vector3d vec = vid2v[v3]-vid2v[v1];
+            Eigen::Vector3d aixs = (vid2v[v1]-vid2v[v2]).normalized();
+            Eigen::Vector3d vec = vid2v[v3]-vid2v[v2];
+            Eigen::Vector3d h = get_vertical_vec(vec, aixs);
             return h;
         }
 };
@@ -469,7 +479,7 @@ class Grid {
             this->sizex = sizex; this->sizey = sizey;
         }
         void addItem(Mesh &mesh) {
-            Eigen::MatrixXf boundingBox = get_bounding_box_2d(mesh.getFlatV());
+            Eigen::MatrixXd boundingBox = get_bounding_box_2d(mesh.getFlatV());
             double minx = boundingBox.col(0)(0), maxx = boundingBox.col(1)(0);
             double miny = boundingBox.col(0)(1), maxy = boundingBox.col(1)(1);
             double x = minx;
@@ -489,11 +499,11 @@ class Grid {
             r = int(x/sizex);
             c = int(y/sizey);
         }
-        std::set<int> getNearMeshes(Eigen::Vector3f A, Eigen::Vector3f B, Eigen::Vector3f C) {
+        std::set<int> getNearMeshes(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C) {
             // compute bounding box
-            Eigen::Matrix3f V;
+            Eigen::Matrix3d V;
             V << A, B, C;
-            Eigen::MatrixXf boundingBox = get_bounding_box_2d(V);
+            Eigen::MatrixXd boundingBox = get_bounding_box_2d(V);
             double minx = boundingBox.col(0)(0), maxx = boundingBox.col(1)(0);
             double miny = boundingBox.col(0)(1), maxy = boundingBox.col(1)(1);
             double x = minx;
@@ -521,17 +531,17 @@ class FlattenObject {
         Grid* grid;
         std::map<int, int> idx2meshId;
 
-        Eigen::MatrixXf V;
-        Eigen::MatrixXf fV;
+        Eigen::MatrixXd V;
+        Eigen::MatrixXd fV;
         Eigen::VectorXi IDX;
 
         VertexArrayObject VAO;
         VertexBufferObject VBO_P;
         IndexBufferObject IBO_IDX;
 
-        Eigen::MatrixXf ModelMat;
-        Eigen::MatrixXf T_to_ori;
-        Eigen::Vector4f barycenter;
+        Eigen::MatrixXd ModelMat;
+        Eigen::MatrixXd T_to_ori;
+        Eigen::Vector4d barycenter;
 
         void addEdge(int v1, int v2, int meshId) {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
@@ -550,17 +560,41 @@ class FlattenObject {
         bool flattenFirst(int meshId, std::set<int> &flatten) {
             Mesh &mesh = meshes[meshId];
             int v1 = mesh.vids[0], v2 = mesh.vids[1], v3 = mesh.vids[2];
-            float v1v2Len = (mesh.vid2v[v1] - mesh.vid2v[v2]).norm();
-            mesh.vid2fv[v1] = Eigen::Vector3f(0., 0., 0.);
-            mesh.vid2fv[v2] = Eigen::Vector3f(0., v1v2Len, 0.);
-            Eigen::Vector3f flatPos;
+            double v1v2Len = (mesh.vid2v[v1] - mesh.vid2v[v2]).norm();
+            // mesh.vid2fv[v1] = Eigen::Vector3d(0., 0., 0.);
+            // mesh.vid2fv[v2] = Eigen::Vector3d(0., v1v2Len, 0.);
+            mesh.vid2fv[v1] = Eigen::Vector3d(0., 0., -1.);
+            mesh.vid2fv[v2] = Eigen::Vector3d(0., v1v2Len, -1.);
+            Eigen::Vector3d flatPos;
             if (!flattenVertex(meshId, v3, v1, v2, mesh.vid2fv[v1], mesh.vid2fv[v2], flatPos, flatten)) {
                 return false;
             }
             mesh.vid2fv[v3] = flatPos;
+
+            // compute rotate angle
+            double rotAngle = 0.;
+
+            Eigen::Vector3d fv1Pos = mesh.vid2fv[v1];
+            Eigen::Vector3d fv2Pos = mesh.vid2fv[v2];
+            Eigen::Vector3d edgefA = fv1Pos, edgefB = fv2Pos;
+            Eigen::Vector3d edgeA = mesh.vid2v[v1], edgeB = mesh.vid2v[v2];
+            if (v2 < v1) {
+                edgeA = mesh.vid2v[v2]; edgeB = mesh.vid2v[v1];
+                edgefA = fv2Pos; edgefB = fv1Pos;
+            }
+            Eigen::Vector3d fRotAixs = (edgefA-edgefB).normalized();
+
+            mesh.R = get_rotate_mat(rotAngle, edgefA, edgefB);
+            mesh.edgeA = edgefA;
+            mesh.edgeB = edgefB;
+            mesh.rotEdge = std::make_pair(v1, v2);
+            mesh.rotAngle = rotAngle;
+            mesh.rotAixs = fRotAixs;
+            mesh.rotRad = 0.;
+
             return true;
         }
-        FlattenObject(Eigen::MatrixXf V, Eigen::VectorXi IDX, std::vector<bool> &meshFlattened) {
+        FlattenObject(Eigen::MatrixXd V, Eigen::VectorXi IDX, std::vector<bool> &meshFlattened) {
             V.conservativeResize(3, V.cols());
             this->V = V;
             this->fV.resize(4, 0);
@@ -647,7 +681,7 @@ class FlattenObject {
 
             for (int meshId: flattened) {
                 meshFlattened[meshId] = true;
-                Eigen::Matrix3f flatV = meshes[meshId].getFlatV();
+                Eigen::Matrix3d flatV = meshes[meshId].getFlatV();
                 this->fV.conservativeResize(4, fV.cols()+3);
                 int last = this->fV.cols();
                 this->fV.col(last-3) = to_4_point(flatV.col(0));
@@ -660,12 +694,12 @@ class FlattenObject {
             this->VAO.init();
             this->VAO.bind();
             this->VBO_P.init();
-            this->VBO_P.update(this->fV);
+            this->VBO_P.update(m_to_float(this->fV));
 
             // init model fields
-            this->ModelMat = Eigen::MatrixXf::Identity(4,4);
-            this->T_to_ori = Eigen::MatrixXf::Identity(4,4);
-            this->barycenter = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0);
+            this->ModelMat = Eigen::MatrixXd::Identity(4,4);
+            this->T_to_ori = Eigen::MatrixXd::Identity(4,4);
+            this->barycenter = Eigen::Vector4d(0.0, 0.0, 0.0, 1.0);
 
             // check tree
             Mesh* root = &meshes.begin()->second;
@@ -695,7 +729,7 @@ class FlattenObject {
             }
 
             // flatten the remaining vertex v3 according to the flat position of v1 and v2
-            Eigen::Vector3f fv3Pos;
+            Eigen::Vector3d fv3Pos;
             if (!flattenVertex(meshId, v3, fv1, fv2, preMesh.vid2fv[fv1], preMesh.vid2fv[fv2], fv3Pos, flattened))
                 return false;
 
@@ -705,55 +739,64 @@ class FlattenObject {
             mesh.vid2fv[v3] = fv3Pos;
 
             // compute rotate angle
-            Eigen::Vector3f curh = mesh.getH(edge).normalized();
-            Eigen::Vector3f preh = preMesh.getH(edge).normalized();
+            Eigen::Vector3d curh = mesh.getH(edge).normalized();
+            Eigen::Vector3d preh = preMesh.getH(edge).normalized();
             double rotAngle = 180. - acos(curh.dot(preh)) * 180.0/PI;
+            double rotRad = PI-acos(curh.dot(preh));
+            double rotDot = -curh.dot(preh);
+            double rotSign = 1;
+            std::cout << "curh.dot(preh)" << std::endl;
+            std::cout << curh.dot(preh) << std::endl;
+            std::cout << "rotAngle" << std::endl;
+            std::cout << rotAngle << std::endl;
 
-            Eigen::Vector3f fv1Pos = mesh.vid2fv[fv1];
-            Eigen::Vector3f fv2Pos = mesh.vid2fv[fv2];
-            Eigen::Vector3f edgefA = fv1Pos, edgefB = fv2Pos;
-            Eigen::Vector3f edgeA = mesh.vid2v[fv1], edgeB = mesh.vid2v[fv2];;
+            Eigen::Vector3d fv1Pos = mesh.vid2fv[fv1];
+            Eigen::Vector3d fv2Pos = mesh.vid2fv[fv2];
+            Eigen::Vector3d edgefA = fv1Pos, edgefB = fv2Pos;
+            Eigen::Vector3d edgeA = mesh.vid2v[fv1], edgeB = mesh.vid2v[fv2];;
             if (fv2 < fv1) {
                 edgeA = mesh.vid2v[fv2]; edgeB = mesh.vid2v[fv1];
             }
-            Eigen::Vector3f fRotAixs = (edgefA-edgefB).normalized();
-            Eigen::Vector3f rotAixs = (edgeA-edgeB).normalized();
-            if ((curh.cross(preh)).dot(rotAixs) < 0. ) rotAngle = -rotAngle;
+            Eigen::Vector3d fRotAixs = (edgefA-edgefB).normalized();
+            Eigen::Vector3d rotAixs = (edgeA-edgeB).normalized();
+            if ((curh.cross(preh)).dot(rotAixs) < 0. ) {
+                rotAngle = -rotAngle;
+                rotRad = -rotRad;
+                rotSign = -1;
+            }
 
             mesh.R = get_rotate_mat(rotAngle, edgefA, edgefB);
             mesh.edgeA = edgefA;
             mesh.edgeB = edgefB;
             mesh.rotEdge = std::make_pair(fv1, fv2);
             mesh.rotAngle = rotAngle;
+            mesh.rotRad = rotRad;
             mesh.rotAixs = fRotAixs;
+            mesh.rotSign = rotSign;
+            mesh.rotDot = rotDot;
+
+            // std::cout << rotAngle << std::endl;
 
             return true;
         }
 
         // compute the flat position of v3 according to the flat position of v1 and v2
         // check overlap
-        bool flattenVertex(int meshId, int v3, int v1, int v2, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, Eigen::Vector3f &fv3Pos, std::set<int> &flattened) {
+        bool flattenVertex(int meshId, int v3, int v1, int v2, Eigen::Vector3d fv1Pos, Eigen::Vector3d fv2Pos, Eigen::Vector3d &fv3Pos, std::set<int> &flattened) {
             Mesh &mesh = meshes[meshId];
-            Eigen::Vector3f flat1, flat2;
-            Eigen::Vector3f v1Pos = mesh.vid2v[v1];
-            Eigen::Vector3f v2Pos = mesh.vid2v[v2];
-            Eigen::Vector3f v3Pos = mesh.vid2v[v3];
-            float v1v2Len = (v2Pos - v1Pos).norm();
-            float v1v3Len = (v3Pos - v1Pos).norm();
-            float v2v3Len = (v3Pos - v2Pos).norm();
-
-            float S = (v2Pos-v1Pos).cross(v3Pos-v1Pos).norm()/2;
-            float h = 2*S / v1v2Len;
-            float b = sqrt(v1v3Len*v1v3Len - h*h);
-            float c = sqrt(v2v3Len*v2v3Len - h*h);
-            if (c > v1v2Len && c > b) b = -b;
+            Eigen::Vector3d flat1, flat2;
             
-            // compute flat pos of H and flat pos of v3
-            Eigen::Vector3f fH = ((v1v2Len-b)/v1v2Len)*fv1Pos + (b/v1v2Len)*fv2Pos;
-            Eigen::Vector3f fv1v2 = fv2Pos - fv1Pos;
-            Eigen::Vector3f flatDir = Eigen::Vector3f(-fv1v2.y(), fv1v2.x(), 0.).normalized();
-            flat1 = fH + h * flatDir;
-            flat2 = fH + h * (-flatDir);
+            // use get H to compute fH
+            Eigen::Vector3d aixs = (mesh.vid2v[v1]-mesh.vid2v[v2]).normalized();
+            Eigen::Vector3d vec = mesh.vid2v[v3]-mesh.vid2v[v2];
+            double len = vec.dot(aixs);
+            Eigen::Vector3d parallel = len*aixs;
+            Eigen::Vector3d hvec = vec-parallel;
+            Eigen::Vector3d faixs = (fv1Pos - fv2Pos).normalized();
+            Eigen::Vector3d fH = fv2Pos + len * faixs;
+            Eigen::Vector3d flatDir = Eigen::Vector3d(-faixs.y(), faixs.x(), 0.).normalized();
+            flat1 = fH + hvec.norm() * flatDir;
+            flat2 = fH + hvec.norm() * (-flatDir);
 
             // check overlap
             bool canFlat = false;
@@ -771,17 +814,17 @@ class FlattenObject {
             return canFlat;
         }
 
-        bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<int> &flattened) {
+        bool overlap(Eigen::Vector3d flatPos, Eigen::Vector3d fv1Pos, Eigen::Vector3d fv2Pos, std::set<int> &flattened) {
             // check if any vertices of a flat Triangle inside the other flat Triangle
             // get all near meshes and combine them to one vector
             std::set<int> nearMeshes = grid->getNearMeshes(flatPos, fv1Pos, fv2Pos);
             for (int meshId: nearMeshes) {
-                Eigen::Matrix3f meshfV = meshes[meshId].getFlatV();
+                Eigen::Matrix3d meshfV = meshes[meshId].getFlatV();
                 if (isInside(flatPos, meshfV)) return true;
-                Eigen::Vector3f center = (flatPos+fv1Pos+fv2Pos)/3.;
+                Eigen::Vector3d center = (flatPos+fv1Pos+fv2Pos)/3.;
                 if (isInside(center, meshfV)) return true;
 
-                Eigen::Matrix3f curMeshfV;
+                Eigen::Matrix3d curMeshfV;
                 curMeshfV << flatPos, fv1Pos, fv2Pos;
                 if (isInside(meshfV.col(0), curMeshfV)) return true;
                 if (isInside(meshfV.col(1), curMeshfV)) return true;
@@ -797,7 +840,7 @@ class FlattenObject {
             }
             return false;
         }
-        bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, int meshId) {
+        bool lineCross(Eigen::Vector3d a, Eigen::Vector3d b, int meshId) {
             Mesh &mesh = meshes[meshId];
             int ov1, ov2, ov3;
             ov1 = mesh.vids[0]; ov2 = mesh.vids[1]; ov3 = mesh.vids[2];
@@ -806,14 +849,14 @@ class FlattenObject {
             if (lineCross(a, b, mesh.vid2fv[ov1], mesh.vid2fv[ov3])) return true;
             return false;
         }
-        bool lineCross(Eigen::Vector3f a, Eigen::Vector3f b, Eigen::Vector3f c, Eigen::Vector3f d) {
+        bool lineCross(Eigen::Vector3d a, Eigen::Vector3d b, Eigen::Vector3d c, Eigen::Vector3d d) {
             // overlap?
             if (((a-c).norm() < ESP || (a-d).norm() < ESP) && ((b-c).norm() < ESP || (b-d).norm() < ESP)) {
                 return false;
             }
             // parallel?
-            Eigen::Vector3f AB = b-a;
-            Eigen::Vector3f CD = d-c;
+            Eigen::Vector3d AB = b-a;
+            Eigen::Vector3d CD = d-c;
             if (AB.cross(CD).norm() - 0. < ESP) {
                 return false;
             }
@@ -828,8 +871,8 @@ class FlattenObject {
             // within range? 0 <= x <= 1
             return x(0) > ESP && x(0) < 1.0-ESP && x(1) > ESP && x(1) < 1.0-ESP;
         }
-        bool isInside(Eigen::Vector3f flatPos, Eigen::Matrix3f meshfV) {
-            Eigen::Vector3f a, b, c;
+        bool isInside(Eigen::Vector3d flatPos, Eigen::Matrix3d meshfV) {
+            Eigen::Vector3d a, b, c;
             a = meshfV.col(0); b = meshfV.col(1); c = meshfV.col(2);
 
             Eigen::Matrix3d M;
@@ -840,19 +883,19 @@ class FlattenObject {
 
             return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
         }
-        bool hit(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &dist) {
+        bool hit(Eigen::Vector4d ray_origin, Eigen::Vector4d ray_direction, double &dist) {
             bool intersected = false;
             // // for (int meshId : this->meshes) {
-            //     // Eigen::Vector4f intersection;
-            //     // Eigen::MatrixXf mesh_fV(4,3);
-            //     // Eigen::Matrix3f fVmat3 = mesh->getFlatV();
+            //     // Eigen::Vector4d intersection;
+            //     // Eigen::MatrixXd mesh_fV(4,3);
+            //     // Eigen::Matrix3d fVmat3 = mesh->getFlatV();
             //     // mesh_fV << 
             //     //     fVmat3.row(0),
             //     //     fVmat3.row(1),
             //     //     fVmat3.row(2),
             //     //     1, 1, 1;
             // for (int i = 0; i < this->fV.cols(); i += 3) {
-            //     Eigen::MatrixXf mesh_fV(4,3);
+            //     Eigen::MatrixXd mesh_fV(4,3);
             //     mesh_fV << 
             //         this->fV.col(0),
             //         this->fV.col(1),
@@ -868,29 +911,29 @@ class FlattenObject {
             // }
             return intersected;
         }
-        void translate(Eigen::Vector4f delta) {
-            Eigen::MatrixXf T = Eigen::MatrixXf::Identity(4, 4);
+        void translate(Eigen::Vector4d delta) {
+            Eigen::MatrixXd T = Eigen::MatrixXd::Identity(4, 4);
             T.col(3)(0) = delta(0); T.col(3)(1) = delta(1); T.col(3)(2) = delta(2);
             this->update_Model_Mat(T, true);
         }
         void scale(double factor) {
             // double factor = 1+delta;
-            Eigen::MatrixXf S = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd S = Eigen::MatrixXd::Identity(4, 4);
             S.col(0)(0) = factor; S.col(1)(1) = factor; S.col(2)(2) = 1.;
-            Eigen::MatrixXf I = Eigen::MatrixXf::Identity(4,4);
+            Eigen::MatrixXd I = Eigen::MatrixXd::Identity(4,4);
             S = (2*I-this->T_to_ori)*S*(this->T_to_ori);
             this->update_Model_Mat(S, false);
         }
-        void rotate(double degree, Eigen::Matrix4f rotateMat) {
+        void rotate(double degree, Eigen::Matrix4d rotateMat) {
             double r = degree*PI/180.0;
-            Eigen::MatrixXf R = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd R = Eigen::MatrixXd::Identity(4, 4);
             R.col(0)(0) = std::cos(r); R.col(0)(1) = std::sin(r);
             R.col(1)(0) = -std::sin(r); R.col(1)(1) = std::cos(r);
-            Eigen::MatrixXf I = Eigen::MatrixXf::Identity(4,4);
+            Eigen::MatrixXd I = Eigen::MatrixXd::Identity(4,4);
             R = (2*I-this->T_to_ori)*rotateMat*(this->T_to_ori);
             this->update_Model_Mat(R, false);
         }
-        void update_Model_Mat(Eigen::MatrixXf M, bool left) {
+        void update_Model_Mat(Eigen::MatrixXd M, bool left) {
             if (left) {
                 // left cross mul
                 this->ModelMat = M*this->ModelMat;
@@ -903,7 +946,7 @@ class FlattenObject {
         std::string export_svg(Camera *camera) {
             std::stringstream ss;
             for (int i = 0; i < this->fV.cols(); i += 3) {
-                Eigen::MatrixXf mesh_fV(4, 3);
+                Eigen::MatrixXd mesh_fV(4, 3);
                 mesh_fV.col(0) = to_4_point(fV.col(i));
                 mesh_fV.col(1) = to_4_point(fV.col(i+1));
                 mesh_fV.col(2) = to_4_point(fV.col(i+2));
@@ -923,15 +966,15 @@ class FlattenObject {
             std::string svg_str = ss.str();
             return svg_str;
         }
-        void adjustSize(Eigen::MatrixXf boundingBox) {
+        void adjustSize(Eigen::MatrixXd boundingBox) {
             double maxx = boundingBox.col(1)(0), maxy = boundingBox.col(1)(1);
             double minx = boundingBox.col(0)(0), miny = boundingBox.col(0)(1);
-            Eigen::MatrixXf curBox = get_bounding_box_2d(this->fV);
+            Eigen::MatrixXd curBox = get_bounding_box_2d(this->fV);
             this->barycenter = (curBox.col(0) + curBox.col(1))/2.0;
             this->barycenter(2) = 0; this->barycenter(3) = 1;
 
             // Computer the translate Matrix from barycenter to the origin
-            Eigen::Vector4f delta = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0) - this->barycenter;
+            Eigen::Vector4d delta = Eigen::Vector4d(0.0, 0.0, 0.0, 1.0) - this->barycenter;
             T_to_ori.col(3)(0) = delta(0); T_to_ori.col(3)(1) = delta(1); T_to_ori.col(3)(2) = delta(2);
 
             // adjust inital position according to bounding box
@@ -942,16 +985,16 @@ class FlattenObject {
 };
 class _3dObject {
     public:
-        Eigen::MatrixXf box;
-        Eigen::MatrixXf ModelMat;
-        Eigen::MatrixXf ModelMat_T;
-        Eigen::MatrixXf Adjust_Mat;
-        Eigen::MatrixXf T_to_ori;
-        Eigen::Vector4f barycenter;
+        Eigen::MatrixXd box;
+        Eigen::MatrixXd ModelMat;
+        Eigen::MatrixXd ModelMat_T;
+        Eigen::MatrixXd Adjust_Mat;
+        Eigen::MatrixXd T_to_ori;
+        Eigen::Vector4d barycenter;
         Eigen::VectorXi IDX;
-        Eigen::MatrixXf V;
-        Eigen::MatrixXf C;
-        Eigen::MatrixXf Normals;
+        Eigen::MatrixXd V;
+        Eigen::MatrixXd C;
+        Eigen::MatrixXd Normals;
 
         int render_mode;
         double r, s, tx, ty;
@@ -972,21 +1015,21 @@ class _3dObject {
         _3dObject(){}
         _3dObject(std::string off_path, int color_idx) {
             //load from off file
-            Eigen::MatrixXf V, C;
+            Eigen::MatrixXd V, C;
             Eigen::VectorXi IDX;
             loadMeshfromOFF(off_path, V, C, IDX);
-            C = Eigen::MatrixXf(3, V.cols());
+            C = Eigen::MatrixXd(3, V.cols());
             // int color_idx = rand() % colors.size();
             Eigen::Vector3i color = colors[color_idx];
             for (int i = 0; i < V.cols(); i++) {
-                C.col(i) = color.cast<float>();
+                C.col(i) = color.cast<double>();
             }
             //compute the bouncing box
             box = get_bounding_box(V);
             //create class Mesh for each mech
             this->initial(V, C, IDX, box);
         }
-        void initial(Eigen::MatrixXf V, Eigen::MatrixXf C, Eigen::VectorXi IDX, Eigen::MatrixXf bounding_box) {
+        void initial(Eigen::MatrixXd V, Eigen::MatrixXd C, Eigen::VectorXi IDX, Eigen::MatrixXd bounding_box) {
             // make sure it is a point
             for (int i = 0; i < V.cols(); i++) {
                 V.col(i)(3) = 1.0;
@@ -1000,22 +1043,22 @@ class _3dObject {
             this->VAO.bind();
             // Initialize the VBO with the vertices data
             this->VBO_P.init();
-            this->VBO_P.update(V);
+            this->VBO_P.update(m_to_float(V));
             this->VBO_C.init();
-            this->VBO_C.update(C/255.0);
+            this->VBO_C.update(m_to_float(C/255.0));
             this->VBO_N.init();
             this->IBO_IDX.init();
             this->IBO_IDX.update(IDX);
 
-            this->ModelMat = Eigen::MatrixXf::Identity(4,4);
-            this->ModelMat_T = Eigen::MatrixXf::Identity(4,4);
-            this->T_to_ori = Eigen::MatrixXf::Identity(4,4);
+            this->ModelMat = Eigen::MatrixXd::Identity(4,4);
+            this->ModelMat_T = Eigen::MatrixXd::Identity(4,4);
+            this->T_to_ori = Eigen::MatrixXd::Identity(4,4);
             this->r = 0; this->s = 1; this->tx = 0; this->ty = 0;
             this->render_mode = 0;
             this->barycenter = (bounding_box.col(0) + bounding_box.col(1))/2.0;
 
             // Computer the translate Matrix from barycenter to the origin
-            Eigen::Vector4f delta = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0) - this->barycenter;
+            Eigen::Vector4d delta = Eigen::Vector4d(0.0, 0.0, 0.0, 1.0) - this->barycenter;
             T_to_ori.col(3)(0) = delta(0); T_to_ori.col(3)(1) = delta(1); T_to_ori.col(3)(2) = delta(2);
 
             // Adjust size
@@ -1028,7 +1071,7 @@ class _3dObject {
             std::cout << "start generating Meshs" << std::endl;
             for (int i = 0; i < IDX.rows(); i+=3) {
                 int a = IDX(i), b = IDX(i+1), c = IDX(i+2);
-                Eigen::MatrixXf Vblock(4, 3);
+                Eigen::MatrixXd Vblock(4, 3);
                 Vblock << V.col(a), V.col(b), V.col(c);
                 auto mesh = new Mesh(Vblock, bounding_box);
                 this->meshes.push_back(mesh);
@@ -1044,13 +1087,13 @@ class _3dObject {
             }
             this->Normals.resize(V.rows(), V.cols());
             for (int i = 0; i < V.cols(); i++) {
-                Eigen::Vector4f normal(0., 0., 0., 0.);
+                Eigen::Vector4d normal(0., 0., 0., 0.);
                 for (Mesh* mesh: this->edges[i]) {
                     normal += mesh->normal;
                 }
                 this->Normals.col(i) = normal.normalized();
             }
-            this->VBO_N.update(this->Normals);
+            this->VBO_N.update(m_to_float(this->Normals));
 
             bc = new BezierCurve();
 
@@ -1062,26 +1105,26 @@ class _3dObject {
             // this->flattenObjs.resize(10);
             this->flatten();
         }
-        void initial_adjust(Eigen::MatrixXf bounding_box) {
+        void initial_adjust(Eigen::MatrixXd bounding_box) {
             double maxx = bounding_box.col(1)(0), maxy = bounding_box.col(1)(1), maxz = bounding_box.col(1)(2);
             double minx = bounding_box.col(0)(0), miny = bounding_box.col(0)(1), minz = bounding_box.col(0)(2);
             double scale_factor = fmin(1.0/(maxx-minx), fmin(1.0/(maxy-miny), 1.0/(maxz-minz)));
             this->scale(scale_factor);
         }
-        bool hit(Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &dist) {
+        bool hit(Eigen::Vector4d ray_origin, Eigen::Vector4d ray_direction, double &dist) {
 
             bool intersected = false;
             int cnt = 0;
             int selectedMeshId;
             for (auto mesh : this->meshes) {
-                Eigen::Vector4f intersection;
-                Eigen::MatrixXf mesh_V(4,3);
+                Eigen::Vector4d intersection;
+                Eigen::MatrixXd mesh_V(4,3);
                 int i = this->IDX(cnt*3), j = this->IDX(cnt*3+1), k = this->IDX(cnt*3+2);
                 mesh_V << this->V.col(i), this->V.col(j), this->V.col(k);
                 mesh_V = this->ModelMat*mesh_V;
 
                 // the ray is parallel to the Mesh, no solution
-                Eigen::Vector4f world_normal = ((this->ModelMat.inverse()).transpose()*mesh->normal).normalized();
+                Eigen::Vector4d world_normal = ((this->ModelMat.inverse()).transpose()*mesh->normal).normalized();
                 if (ray_direction.dot(world_normal) == 0) {
                     cnt++;
                     continue;
@@ -1105,46 +1148,46 @@ class _3dObject {
             }
             return intersected;
         }
-        void translate(Eigen::Vector4f delta) {
+        void translate(Eigen::Vector4d delta) {
             // delta = this->Adjust_Mat.inverse()*delta;
             this->tx += delta(0); this->ty += delta(1);
-            Eigen::MatrixXf T = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd T = Eigen::MatrixXd::Identity(4, 4);
             T.col(3)(0) = delta(0); T.col(3)(1) = delta(1); T.col(3)(2) = delta(2);
-            Eigen::MatrixXf T_T = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd T_T = Eigen::MatrixXd::Identity(4, 4);
             T_T.col(3)(0) = -delta(0); T_T.col(3)(1) = -delta(1); T_T.col(3)(2) = -delta(2);
             this->update_Model_Mat(T, T_T, true);
         }
         void scale(double factor) {
             // double factor = 1+delta;
             this->s *= factor;
-            Eigen::MatrixXf S = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd S = Eigen::MatrixXd::Identity(4, 4);
             S.col(0)(0) = factor; S.col(1)(1) = factor; S.col(2)(2) = factor;
-            Eigen::MatrixXf S_T = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd S_T = Eigen::MatrixXd::Identity(4, 4);
             S_T.col(0)(0) = 1.0/factor; S_T.col(1)(1) = 1.0/factor; S_T.col(2)(2) = 1.0/factor;
 
-            Eigen::MatrixXf I = Eigen::MatrixXf::Identity(4,4);
+            Eigen::MatrixXd I = Eigen::MatrixXd::Identity(4,4);
             S = (2*I-this->T_to_ori)*S*(this->T_to_ori);
             S_T = (2*I-this->T_to_ori)*S_T*(this->T_to_ori);
 
             this->update_Model_Mat(S, S_T, false);
         }
-        void rotate(double degree, Eigen::Matrix4f rotateMat) {
+        void rotate(double degree, Eigen::Matrix4d rotateMat) {
             double r = degree*PI/180.0;
             this->r += r;
-            Eigen::MatrixXf R = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd R = Eigen::MatrixXd::Identity(4, 4);
             R.col(0)(0) = std::cos(r); R.col(0)(1) = std::sin(r);
             R.col(1)(0) = -std::sin(r); R.col(1)(1) = std::cos(r);
-            Eigen::MatrixXf R_T = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd R_T = Eigen::MatrixXd::Identity(4, 4);
             R_T.col(0)(0) = std::cos(r); R_T.col(0)(1) = -std::sin(r);
             R_T.col(1)(0) = std::sin(r); R_T.col(1)(1) = std::cos(r);
 
-            Eigen::MatrixXf I = Eigen::MatrixXf::Identity(4,4);
+            Eigen::MatrixXd I = Eigen::MatrixXd::Identity(4,4);
             R = (2*I-this->T_to_ori)*rotateMat*(this->T_to_ori);
             R_T = (2*I-this->T_to_ori)*rotateMat.inverse()*(this->T_to_ori);
 
             this->update_Model_Mat(R, R_T, false);
         }
-        void update_Model_Mat(Eigen::MatrixXf M, Eigen::MatrixXf M_T, bool left) {
+        void update_Model_Mat(Eigen::MatrixXd M, Eigen::MatrixXd M_T, bool left) {
             if (left) {
                 // left cross mul
                 this->ModelMat = M*this->ModelMat;
@@ -1188,11 +1231,11 @@ class _3dObject {
             }
 
             // scale all islands with a same ratio to fit the window
-            std::vector<Eigen::Matrix2f> islandsBoxs;
-            Eigen::MatrixXf boundingBox(2, 2);
+            std::vector<Eigen::Matrix2d> islandsBoxs;
+            Eigen::MatrixXd boundingBox(2, 2);
             double deltaY = 0.;
             for (FlattenObject &flatObj: this->flattenObjs) {
-                Eigen::MatrixXf box = get_bounding_box_2d(flatObj.fV);
+                Eigen::MatrixXd box = get_bounding_box_2d(flatObj.fV);
                 islandsBoxs.push_back(box);
                 if (box.col(1)(1)-box.col(0)(1) > deltaY) {
                     deltaY = box.col(1)(1)-box.col(0)(1);
@@ -1202,7 +1245,6 @@ class _3dObject {
             std::cout << "island # = " << this->flattenObjs.size() << std::endl;
             for (FlattenObject &flatObj: this->flattenObjs) {
                 std::cout << "mesh # = " << flatObj.fV.cols()/3 << std::endl;
-                // flatObj.adjustSize(boundingBox);
             }
 
             // arrange the layout of islands on paper
@@ -1211,7 +1253,7 @@ class _3dObject {
             double margin = 0.1;
             for (int i = 0; i < this->flattenObjs.size(); i++) {
                 FlattenObject &flatObj = this->flattenObjs[i];
-                Eigen::Matrix2f box = islandsBoxs[i];
+                Eigen::Matrix2d box = islandsBoxs[i];
                 double w = box.col(1).x()-box.col(0).x(), h = box.col(1).y()-box.col(0).y();
                 islandMoveTo(paperL, curY, box, flatObj);
                 curY -= h+margin;
@@ -1221,63 +1263,55 @@ class _3dObject {
 
             // scale the whole paper to fit the window
             double scaleFactor = fmin(1.0/(paperT-paperB), 1.0/(paperR-paperL));
-            Eigen::MatrixXf S = Eigen::MatrixXf::Identity(4, 4);
+            Eigen::MatrixXd S = Eigen::MatrixXd::Identity(4, 4);
             S.col(0)(0) = scaleFactor; S.col(1)(1) = scaleFactor; S.col(2)(2) = scaleFactor;
-            // std::cout << "scaleFactor" << std::endl;
-            // std::cout << scaleFactor << std::endl;
             for (FlattenObject &flatObj: this->flattenObjs) {
                 flatObj.ModelMat = S*flatObj.ModelMat;
             }
 
             // move paper center to the center of the screen
-            // std::cout << "paperL, paperR, paperT, paperBottom" << std::endl;
-            // std::cout << paperL << " " << paperR << " " << paperT << " " << paperB << std::endl;
-            Eigen::Vector4f paperCenter(scaleFactor*(paperL+paperR)/2.0, scaleFactor*(paperT+paperB)/2.0, 0., 1.);
-            // std::cout << "paperCenter" << std::endl;
-            // std::cout << paperCenter << std::endl;
-            Eigen::Vector4f delta = Eigen::Vector4f(0., 0., 0., 1.)-paperCenter;
+            Eigen::Vector4d paperCenter(scaleFactor*(paperL+paperR)/2.0, scaleFactor*(paperT+paperB)/2.0, 0., 1.);
+            Eigen::Vector4d delta = Eigen::Vector4d(0., 0., 0., 1.)-paperCenter;
             for (FlattenObject &flatObj: this->flattenObjs) {
                 flatObj.translate(delta);
             }
         }
-        void islandMoveTo(double l, double t, Eigen::Matrix2f boundBox, FlattenObject &flatObj) {
-            Eigen::Vector2f leftTop = Eigen::Vector2f(l, t);
+        void islandMoveTo(double l, double t, Eigen::Matrix2d boundBox, FlattenObject &flatObj) {
+            Eigen::Vector2d leftTop = Eigen::Vector2d(l, t);
             double bminx = boundBox.col(0).x(), bmaxy = boundBox.col(1).y();
-            Eigen::Vector4f bleftTop = Eigen::Vector4f(bminx, bmaxy, 0., 1.);
+            Eigen::Vector4d bleftTop = Eigen::Vector4d(bminx, bmaxy, 0., 1.);
             bleftTop = flatObj.ModelMat*bleftTop;
-            Eigen::Vector2f delta = leftTop - Eigen::Vector2f(bleftTop.x(), bleftTop.y());
-            // std::cout << "island move delta" << std::endl;
-            // std::cout << delta << std::endl;
-            flatObj.translate(Eigen::Vector4f(delta(0), delta(1), 0., 0.));
+            Eigen::Vector2d delta = leftTop - Eigen::Vector2d(bleftTop.x(), bleftTop.y());
+            flatObj.translate(Eigen::Vector4d(delta(0), delta(1), 0., 0.));
         }
 };
 class Cube: public _3dObject {
     public:
-        Eigen::Vector4f center;
+        Eigen::Vector4d center;
         Cube(int color_idx, double x, double y, double z, double len = 1.0):_3dObject() {
             std::cout << "enter initialization" << std::endl;
-            this->center = Eigen::Vector4f(x, y, z, 1);
-            Eigen::Vector4f HB = Eigen::Vector4f(-len, len, len, 0);
-            Eigen::Vector4f EC = Eigen::Vector4f(len, len, len, 0);
-            Eigen::Vector4f GA = Eigen::Vector4f(-len, len, -len, 0);
-            Eigen::Vector4f FD = Eigen::Vector4f(len, len, -len, 0);
-            Eigen::Vector4f A = center+0.5*GA, G = center-0.5*GA;
-            Eigen::Vector4f B = center+0.5*HB, H = center-0.5*HB;
-            Eigen::Vector4f C = center+0.5*EC, E = center-0.5*EC;
-            Eigen::Vector4f D = center+0.5*FD, F = center-0.5*FD;
+            this->center = Eigen::Vector4d(x, y, z, 1);
+            Eigen::Vector4d HB = Eigen::Vector4d(-len, len, len, 0);
+            Eigen::Vector4d EC = Eigen::Vector4d(len, len, len, 0);
+            Eigen::Vector4d GA = Eigen::Vector4d(-len, len, -len, 0);
+            Eigen::Vector4d FD = Eigen::Vector4d(len, len, -len, 0);
+            Eigen::Vector4d A = center+0.5*GA, G = center-0.5*GA;
+            Eigen::Vector4d B = center+0.5*HB, H = center-0.5*HB;
+            Eigen::Vector4d C = center+0.5*EC, E = center-0.5*EC;
+            Eigen::Vector4d D = center+0.5*FD, F = center-0.5*FD;
             // 6 faces, 12 Meshs
-            Eigen::MatrixXf V(4, 8);
+            Eigen::MatrixXd V(4, 8);
             V << A, B, C, D, E, F, G, H;
             Eigen::VectorXi IDX(36);
             IDX << 0,1,2, 2,3,0, 4,6,5, 6,4,7, 0,5,1, 5,0,4, 1,6,2, 1,5,6, 3,2,6, 6,7,3, 3,7,0, 7,4,0;
-            Eigen::MatrixXf Color(3, 8);
+            Eigen::MatrixXd Color(3, 8);
             Eigen::Vector3i color = colors[color_idx];
             for (int i = 0; i < 8; i++) {
-                Color.col(i) = color.cast<float>();
+                Color.col(i) = color.cast<double>();
             }
             std::cout << "ready to generate Meshs" << std::endl;
             // bounding box
-            Eigen::MatrixXf box(4, 2);
+            Eigen::MatrixXd box(4, 2);
             box << x-len/2.0, x+len/2.0, y-len/2.0, y+len/2.0, z-len/2.0, z+len/2.0, 1, 1;
             this->initial(V, Color, IDX, box);
         }
@@ -1294,7 +1328,7 @@ class _3dObjectBuffer {
             selected_obj = nullptr;
             selected_flat_obj = nullptr;
             ray_tracer = new RayTracer();
-            ray_tracer->add_light(Eigen::Vector4f(0.0, 0.0, 1, 1.0));
+            ray_tracer->add_light(Eigen::Vector4d(0.0, 0.0, 1, 1.0));
             color_idx = 0;
         }
         void add_cube(double x, double y, double z, double len=1.0) {
@@ -1307,14 +1341,14 @@ class _3dObjectBuffer {
             this->color_idx++;
             _3d_objs.push_back(new _3dObject(off_path, this->color_idx));
         }
-        bool hit(int subWindow, Eigen::Vector4f ray_origin, Eigen::Vector4f ray_direction, float &ret_dist, int mode=CILCK_ACTION) {
-            float min_dist = DIST_MAX;
+        bool hit(int subWindow, Eigen::Vector4d ray_origin, Eigen::Vector4d ray_direction, double &ret_dist, int mode=CILCK_ACTION) {
+            double min_dist = DIST_MAX;
             _3dObject* selected = nullptr;
             FlattenObject* selected_flat = nullptr;
             if (subWindow == LEFTSUBWINDOW) {
                 // find the hitted 3D object if any
                 for (auto obj: _3d_objs) {
-                    float dist = DIST_MAX;
+                    double dist = DIST_MAX;
                     if (obj->hit(ray_origin, ray_direction, dist)) {
                         if (selected == nullptr || min_dist > dist) {
                             min_dist = dist;
@@ -1326,7 +1360,7 @@ class _3dObjectBuffer {
             else if (subWindow == RIGHTSUBWINDOW) {
                 // find the hitted flat object if any
                 for (auto obj: _3d_objs) {
-                    float dist = DIST_MAX;
+                    double dist = DIST_MAX;
                     for (auto &flatObj: obj->flattenObjs) {
                         if (flatObj.hit(ray_origin, ray_direction, dist)) {
                             if (selected_flat == nullptr || min_dist > dist) {
@@ -1346,7 +1380,7 @@ class _3dObjectBuffer {
 
             return selected != nullptr || selected_flat != nullptr;
         }
-        bool translate(Eigen::Vector4f delta) {
+        bool translate(Eigen::Vector4d delta) {
             if (this->selected_obj != nullptr) {
                 this->selected_obj->translate(delta);
                 return true;
@@ -1357,7 +1391,7 @@ class _3dObjectBuffer {
             }
             return false;
         }
-        bool rotate(double degree, Eigen::Vector3f rotateAixs) {
+        bool rotate(double degree, Eigen::Vector3d rotateAixs) {
             if (this->selected_obj != nullptr) {
                 auto M = this->get_rotate_mat(degree, rotateAixs);
                 this->selected_obj->rotate(degree, M);
@@ -1395,13 +1429,13 @@ class _3dObjectBuffer {
             }
             return false;
         }
-        Eigen::Matrix4f get_rotate_mat(float angle, Eigen::Vector3f rotateAixs) {
-            float r = (PI/180) * (angle/2);
-            float x = rotateAixs.x() * sin(r);
-            float y = rotateAixs.y() * sin(r);
-            float z = rotateAixs.z() * sin(r);
-            float w = cos(r);
-            Eigen::Matrix4f rotate_mat;
+        Eigen::Matrix4d get_rotate_mat(double angle, Eigen::Vector3d rotateAixs) {
+            double r = (PI/180) * (angle/2);
+            double x = rotateAixs.x() * sin(r);
+            double y = rotateAixs.y() * sin(r);
+            double z = rotateAixs.z() * sin(r);
+            double w = cos(r);
+            Eigen::Matrix4d rotate_mat;
             rotate_mat << 
             1-2*y*y-2*z*z, 2*x*y-2*z*w, 2*x*z+2*y*w, 0,
             2*x*y+2*z*w, 1-2*x*x-2*z*z, 2*y*x-2*x*w, 0,
@@ -1431,6 +1465,7 @@ class Player {
             FlattenObject& flatObj = obj3d->flattenObjs[0];
             waitlist.push(&flatObj.meshes.begin()->second);
             frames = 10.;
+            // frames = 1.;
             frame = 0;
             playing = true;
         }
@@ -1440,9 +1475,8 @@ class Player {
         void updateAnimateMats() {
             // std::cout << "update animate matrix" << std::endl;
             frame += 1;
-            const double dt = frame/frames;
+            const double dt = (double)frame/frames;
             if (dt > 1.) {
-                // dt = 0.;
                 frame = 0;
                 Mesh* root = waitlist.front();
                 waitlist.pop();
@@ -1456,7 +1490,7 @@ class Player {
                 Mesh* root = waitlist.front();
                 std::queue<Mesh*> q;
                 q.push(root);
-                Eigen::Matrix4f R = get_rotate_mat(dt*root->rotAngle, root->edgeA, root->edgeB);
+                Eigen::Matrix4d R = get_rotate_mat(dt*root->rotRad, root->edgeA, root->edgeB);
                 root->animeM = root->accR * R;
                 while (!q.empty()) {
                     Mesh* cur = q.front();
@@ -1503,7 +1537,7 @@ void update_window_scale(GLFWwindow* window) {
     camera->look_at(window);
 }
 
-Eigen::Vector4f get_click_position(GLFWwindow* window, int &subWindow) {
+Eigen::Vector4d get_click_position(GLFWwindow* window, int &subWindow) {
     // Get the position of the mouse in the window
     double xpos, ypos;
     glfwGetCursorPos(window, &xpos, &ypos);
@@ -1513,24 +1547,24 @@ Eigen::Vector4f get_click_position(GLFWwindow* window, int &subWindow) {
     glfwGetWindowSize(window, &width, &height);
 
     // Convert screen position to world coordinates
-    Eigen::Vector4f p_screen;
+    Eigen::Vector4d p_screen;
     // click on right screen
     if (xpos > width/2) {
         subWindow = RIGHTSUBWINDOW;
-        p_screen = Eigen::Vector4f((xpos-width/2)*2,height-1-ypos,0.0,1.0);
+        p_screen = Eigen::Vector4d((xpos-width/2)*2,height-1-ypos,0.0,1.0);
     }
     // click on left screen
     else {
         subWindow = LEFTSUBWINDOW;
-        p_screen = Eigen::Vector4f(xpos*2,height-1-ypos,0.0,1.0);
+        p_screen = Eigen::Vector4d(xpos*2,height-1-ypos,0.0,1.0);
     }
-    Eigen::Vector4f p_canonical((p_screen[0]/width)*2-1,(p_screen[1]/height)*2-1,-camera->n,1.0);
-    Eigen::Vector4f p_camera = camera->get_project_mat().inverse() * p_canonical;
+    Eigen::Vector4d p_canonical((p_screen[0]/width)*2-1,(p_screen[1]/height)*2-1,-camera->n,1.0);
+    Eigen::Vector4d p_camera = camera->get_project_mat().inverse() * p_canonical;
     if (fabs(p_camera(3)-1.0) > 0.001) {
         p_camera = p_camera/p_camera(3);
     }
 
-    Eigen::Vector4f p_world;
+    Eigen::Vector4d p_world;
     if (subWindow == RIGHTSUBWINDOW)
         p_world = camera->flatViewMat.inverse() * p_camera;
     else if (subWindow == LEFTSUBWINDOW)
@@ -1548,16 +1582,16 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
     // Convert screen position to world coordinates
     int subWindow;
-    Eigen::Vector4f click_point = get_click_position(window, subWindow);
+    Eigen::Vector4d click_point = get_click_position(window, subWindow);
     camera->focusWindow = subWindow;
 
     // Update the position of the first vertex if the left button is pressed
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        Eigen::Vector4f ray_origin = click_point;
+        Eigen::Vector4d ray_origin = click_point;
         // orth projection
-        Eigen::Vector4f ray_direction;
+        Eigen::Vector4d ray_direction;
         if (subWindow == RIGHTSUBWINDOW) {
-            ray_direction = Eigen::Vector4f(0., 0., -1., 0.);
+            ray_direction = Eigen::Vector4d(0., 0., -1., 0.);
         }
         else {
             if (camera->project_mode == ORTHO) {
@@ -1568,7 +1602,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
                 ray_direction(3) = 0.0;
             }
         }
-        float dist = 0;
+        double dist = 0;
         if (_3d_objs_buffer->hit(subWindow, ray_origin, ray_direction, dist)) {
             drag = true;
             hit_dist = dist;
@@ -1584,10 +1618,10 @@ void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
 {
     // Convert screen position to world coordinates
     int subWindow;
-    Eigen::Vector4f click_point = get_click_position(window, subWindow);
+    Eigen::Vector4d click_point = get_click_position(window, subWindow);
 
     if (drag) {
-        Eigen::Vector4f delta = click_point-pre_cursor_point;
+        Eigen::Vector4d delta = click_point-pre_cursor_point;
         _3d_objs_buffer->translate(delta);
         pre_cursor_point = click_point;
     }
@@ -1689,7 +1723,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         // move object up (camera up direction)
         case GLFW_KEY_W:
             if (action == GLFW_PRESS) {
-                // if (_3d_objs_buffer->translate(Eigen::Vector4f(0., 0.2, 0., 0.))) {
+                // if (_3d_objs_buffer->translate(Eigen::Vector4d(0., 0.2, 0., 0.))) {
                 if (_3d_objs_buffer->translate(to_4_vec(camera->up)/10.0)) {
                     glfwSetWindowTitle (window, "move up");
                 }
@@ -1745,7 +1779,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 }
                 else {
                     glfwSetWindowTitle (window, "pan camera left 20%");
-                    Eigen::Vector4f delta(2*0.2, 0, 0, 0);
+                    Eigen::Vector4d delta(2*0.2, 0, 0, 0);
                     camera->pan2D(delta);
                 }
             }
@@ -1759,7 +1793,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 }
                 else {
                     glfwSetWindowTitle (window, "pan camera right 20%");
-                    Eigen::Vector4f delta(-2*0.2, 0, 0, 0);
+                    Eigen::Vector4d delta(-2*0.2, 0, 0, 0);
                     camera->pan2D(delta);
                 }
             }
@@ -1773,7 +1807,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 }
                 else {
                     glfwSetWindowTitle (window, "pan camera up 20%");
-                    Eigen::Vector4f delta(0, -2*0.2, 0, 0);
+                    Eigen::Vector4d delta(0, -2*0.2, 0, 0);
                     camera->pan2D(delta);
                 }
             }
@@ -1787,7 +1821,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 }
                 else {
                     glfwSetWindowTitle (window, "pan camera down 20%");
-                    Eigen::Vector4f delta(0, 2*0.2, 0, 0);
+                    Eigen::Vector4d delta(0, 2*0.2, 0, 0);
                     camera->pan2D(delta);
                 }
             }
@@ -1863,6 +1897,8 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 
 int main(void)
 {
+    std::cout << std::setprecision(10);
+
     GLFWwindow* window;
 
     // Initialize the library
@@ -1918,7 +1954,7 @@ int main(void)
     // at least a vertex shader and a fragment shader to be valid
     Program program;
     const GLchar* vertex_shader =
-            "#version 150 core\n"
+            "#version 410 core\n"
                     "in vec4 position;"
                     "uniform vec3 color;"
                     "uniform mat4 ViewMat;"
@@ -1932,7 +1968,7 @@ int main(void)
                     "    f_color = color;"
                     "}";
     const GLchar* fragment_shader =
-            "#version 150 core\n"
+            "#version 410 core\n"
                     "in vec3 f_color;"
                     "out vec4 outColor;"
                     "uniform vec3 lineColor;"
@@ -1968,16 +2004,16 @@ int main(void)
     camera = new Camera(window);
 
     // bind light
-    auto light = _3d_objs_buffer->ray_tracer->lights[0];
-    glUniform4fv(program.uniform("light.position"), 1, light->position.data());
-    glUniform3fv(program.uniform("light.intensities"), 1, light->intensity.data());
+    // auto light = _3d_objs_buffer->ray_tracer->lights[0];
+    // glUniform4fv(program.uniform("light.position"), 1, light->position.data());
+    // glUniform3fv(program.uniform("light.intensities"), 1, light->intensity.data());
     // bind special colors
-    Eigen::Vector3f special_color = (SELCET_COLOR.cast<float>())/255.0;
+    Eigen::Vector3d special_color = (SELCET_COLOR.cast<double>())/255.0;
     // glUniform3fv(program.uniform("selectedColor"), 1, special_color.data());
-    special_color = (BLACK.cast<float>())/255.0;
-    // special_color = (WHITE.cast<float>())/255.0;
-    glUniform3fv(program.uniform("lineColor"), 1, special_color.data());
-    Eigen::MatrixXf I44 = Eigen::MatrixXf::Identity(4,4);
+    special_color = (BLACK.cast<double>())/255.0;
+    // special_color = (WHITE.cast<double>())/255.0;
+    glUniform3fv(program.uniform("lineColor"), 1, v_to_float(special_color).data());
+    Eigen::MatrixXd I44 = Eigen::MatrixXd::Identity(4,4);
 
     // Loop until the user closes the window
     while (!glfwWindowShouldClose(window))
@@ -1997,16 +2033,16 @@ int main(void)
         // Update window scaling
         update_window_scale(window);
         // Send the View Mat to Vertex Shader
-        Eigen::Vector4f tmp;
+        Eigen::Vector4d tmp;
         tmp(0) = camera->position(0); tmp(1) = camera->position(1); tmp(2) = camera->position(2);
         tmp(3) = 1.0;
-        Eigen::Vector3f white = (WHITE.cast<float>())/255.0;
+        Eigen::Vector3d white = (WHITE.cast<double>())/255.0;
         // glUniform3fv(program.uniform("color"), 1, special_color.data());
-        Eigen::Vector3f red = (RED.cast<float>())/255.0;
-        glUniform4fv(program.uniform("viewPosition"), 1, tmp.data());
+        Eigen::Vector3d red = (RED.cast<double>())/255.0;
+        glUniform4fv(program.uniform("viewPosition"), 1, v_to_float(tmp).data());
         // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->flatViewMat.data());
-        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
-        glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, camera->get_project_mat().data());
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, m_to_float(camera->ViewMat).data());
+        glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, m_to_float(camera->get_project_mat()).data());
 
         int WindowWidth, WindowHeight;
         glfwGetWindowSize(window, &WindowWidth, &WindowHeight);
@@ -2020,17 +2056,19 @@ int main(void)
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
             for (FlattenObject &flatObj: obj->flattenObjs) {
-                glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj.ModelMat.data());
+                glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, m_to_float(flatObj.ModelMat).data());
 
                 flatObj.VAO.bind();
                 program.bindVertexAttribArray("position", flatObj.VBO_P);
-                glUniform3fv(program.uniform("color"), 1, white.data());
+                glUniform3fv(program.uniform("color"), 1, v_to_float(white).data());
                 for (int i = 0; i < flatObj.fV.cols(); i += 3) {
                     // get animation model matrix
                     int meshId = flatObj.idx2meshId[i];
                     Mesh &mesh = flatObj.meshes[meshId];
-                    Eigen::Matrix4f AnimateT = mesh.animeM;
-                    glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, AnimateT.data());
+                    Eigen::Matrix4d AnimateT = mesh.animeM;
+                    // std::cout << "AnimateT" << std::endl;
+                    // std::cout << AnimateT << std::endl;
+                    glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, m_to_float(AnimateT).data());
 
                     glUniform1i(program.uniform("isLine"), 1);
                     glDrawArrays(GL_LINE_LOOP, i, 3);
@@ -2042,19 +2080,19 @@ int main(void)
 
         // left screen
         glViewport(0, 0, WindowWidth, WindowHeight*2);
-        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
-        glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, I44.data());
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, m_to_float(camera->ViewMat).data());
+        glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, m_to_float(I44).data());
 
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             obj->VAO.bind();
             program.bindVertexAttribArray("position",obj->VBO_P);
-            glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, obj->ModelMat.data());
+            glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, m_to_float(obj->ModelMat).data());
             for (int i = 0; i < obj->meshes.size(); i++) {
                 if (obj->selectedMeshes.find(i) != obj->selectedMeshes.end()) {
-                    glUniform3fv(program.uniform("color"), 1, red.data());
+                    glUniform3fv(program.uniform("color"), 1, v_to_float(red).data());
                 }
                 else {
-                    glUniform3fv(program.uniform("color"), 1, white.data());
+                    glUniform3fv(program.uniform("color"), 1, v_to_float(white).data());
                 }
                 glUniform1i(program.uniform("isLine"), 1);
                 glDrawElements(GL_LINE_LOOP, 3, GL_UNSIGNED_INT, (void*)(sizeof(int)* (i*3)));

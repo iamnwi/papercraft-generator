@@ -146,7 +146,8 @@ void _check_gl_error(const char *file, int line);
 
 #endif
 
-#define PI 3.14159265
+// #define PI 3.14159265
+#define PI 3.1415926535897932384626433832795028841971693993
 #define BUMPY_CUBE_OFF_PATH "../data/bumpy_cube.off"
 // #define BUNNY_OFF_PATH "../data/bunny_remesh.off"
 #define BUNNY_OFF_PATH "../data/bunny.off"
@@ -170,18 +171,20 @@ void _check_gl_error(const char *file, int line);
 #define LEFTSUBWINDOW 0
 #define RIGHTSUBWINDOW 1
 
-bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXf &V, Eigen::MatrixXf &C, Eigen::VectorXi &IDX);
-Eigen::MatrixXf get_bounding_box(Eigen::MatrixXf V);
-Eigen::MatrixXf get_bounding_box_2d(Eigen::MatrixXf V);
-Eigen::Vector3f to_3(Eigen::Vector4f X);
-Eigen::Matrix4f LookAtRH( Eigen::Vector3f eye, Eigen::Vector3f target, Eigen::Vector3f up );
-Eigen::MatrixXf get_ortho_matrix(float l, float r, float b, float t, float n, float f);
-Eigen::Vector4f to_4_vec(Eigen::Vector3f vec);
-Eigen::Vector4f to_4_point(Eigen::Vector3f vec);
-Eigen::Matrix4f mat_to_4(Eigen::Matrix3f M);
-Eigen::Vector3f get_vertical_vec(Eigen::Vector3f vech3, Eigen::Vector3f rotAixs);
-Eigen::Matrix4f get_rotate_mat(double angle, Eigen::Vector3f edgeA, Eigen::Vector3f edgeB);
-Eigen::Matrix4f get_rotate_mat(double angle, Eigen::Vector3f rotateAxis);
+bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXd &V, Eigen::MatrixXd &C, Eigen::VectorXi &IDX);
+Eigen::MatrixXd get_bounding_box(Eigen::MatrixXd V);
+Eigen::MatrixXd get_bounding_box_2d(Eigen::MatrixXd V);
+Eigen::Vector3d to_3(Eigen::Vector4d X);
+Eigen::Matrix4d LookAtRH( Eigen::Vector3d eye, Eigen::Vector3d target, Eigen::Vector3d up );
+Eigen::MatrixXd get_ortho_matrix(double l, double r, double b, double t, double n, double f);
+Eigen::Vector4d to_4_vec(Eigen::Vector3d vec);
+Eigen::Vector4d to_4_point(Eigen::Vector3d vec);
+Eigen::Matrix4d mat_to_4(Eigen::Matrix3d M);
+Eigen::Vector3d get_vertical_vec(Eigen::Vector3d vech3, Eigen::Vector3d rotAixs);
+Eigen::Matrix4d get_rotate_mat(double rad, Eigen::Vector3d edgeA, Eigen::Vector3d edgeB);
+Eigen::Matrix4d get_rotate_mat(double rotDot, double rotSign, Eigen::Vector3d edgeA, Eigen::Vector3d edgeB);
+Eigen::VectorXf v_to_float(Eigen::VectorXd in);
+Eigen::MatrixXf m_to_float(Eigen::MatrixXd in);
 
 std::string replace_all(std::string str, const std::string& from, const std::string& to);
 std::string get_tri_g_template();
