@@ -24,6 +24,8 @@
 // Timer
 #include <chrono>
 
+typedef std::pair<int, int> Edge;
+
 // Contains the vertex positions
 Eigen::MatrixXf V(2,3);
 
@@ -338,6 +340,17 @@ class Mesh {
         std::vector< std::pair< int, std::pair<int,int> > > nebMeshes;
         int id;
 
+        Eigen::Matrix4f R;
+        Eigen::Matrix4f accR;
+        Eigen::Matrix4f animeM;
+        Mesh* parent;
+        std::vector<Mesh*> childs;
+        Edge rotEdge;
+        Eigen::Vector3f rotAixs;
+        Eigen::Vector3f edgeA;
+        Eigen::Vector3f edgeB;
+        double rotAngle;
+
         VertexArrayObject VAO;
         VertexBufferObject VBO_P;
 
@@ -350,6 +363,10 @@ class Mesh {
             // init flat position
             Eigen::Vector3f zero = Eigen::VectorXf::Zero(3);
             this->vid2fv[v1] = zero; this->vid2fv[v2] = zero; this->vid2fv[v3] = zero;
+            this->accR = Eigen::MatrixXf::Identity(4,4);
+            this->R = Eigen::MatrixXf::Identity(4,4);
+            this->animeM = Eigen::MatrixXf::Identity(4,4);
+            this->parent = nullptr;
 
             this->VAO.init();
             this->VAO.bind();
@@ -410,6 +427,19 @@ class Mesh {
 
             if (xv < 0 || xv+xu > 1) return false;
             return true;
+        }
+        Eigen::Vector3f getH(Edge edge) {
+            int v1 = edge.first, v2 = edge.second;
+            int v3;
+            for (int vid: vids) {
+                if (vid != v1 && vid != v2) {
+                    v3 = vid; break;
+                }
+            }
+            Eigen::Vector3f aixs = (vid2v[v2]-vid2v[v1]).normalized();
+            Eigen::Vector3f vec = vid2v[v3]-vid2v[v1];
+            Eigen::Vector3f h = get_vertical_vec(vec, aixs);
+            return h;
         }
 };
 class Node {
@@ -489,6 +519,7 @@ class FlattenObject {
         std::map<std::pair<int, int>, std::vector<int>> edge2meshes;
         std::map<std::pair<int, int>, double> edge2weight;
         Grid* grid;
+        std::map<int, int> idx2meshId;
 
         Eigen::MatrixXf V;
         Eigen::MatrixXf fV;
@@ -532,7 +563,7 @@ class FlattenObject {
         FlattenObject(Eigen::MatrixXf V, Eigen::VectorXi IDX, std::vector<bool> &meshFlattened) {
             V.conservativeResize(3, V.cols());
             this->V = V;
-            this->fV.resize(3, 0);
+            this->fV.resize(4, 0);
 
             // create V and F matrix
             std::cout << "create meshes" << std::endl;
@@ -569,7 +600,7 @@ class FlattenObject {
             // new a Regular Grid to boost the overlap checking process.
             grid = new Grid();
 
-            // maximal spaning tree
+            // maximal spaning tree(MST)
             std::priority_queue<Node, std::vector<Node>, CompareWeight> pq;
             std::set<int> flattened;
             std::vector<double> dist(IDX.rows()/3, 0.);
@@ -606,17 +637,23 @@ class FlattenObject {
                     node = pq.top();
                     flattened.insert(node.meshId);
                     grid->addItem(meshes[node.meshId]);
+                    // build MST node connections
+                    Mesh &curMesh = meshes[node.meshId];
+                    Mesh &preMesh = meshes[node.parentMeshId];
+                    curMesh.parent = &preMesh;
+                    preMesh.childs.push_back(&curMesh);
                 }
             }
 
             for (int meshId: flattened) {
                 meshFlattened[meshId] = true;
                 Eigen::Matrix3f flatV = meshes[meshId].getFlatV();
-                this->fV.conservativeResize(3, fV.cols()+3);
+                this->fV.conservativeResize(4, fV.cols()+3);
                 int last = this->fV.cols();
-                this->fV.col(last-3) = flatV.col(0);
-                this->fV.col(last-2) = flatV.col(1);
-                this->fV.col(last-1) = flatV.col(2);
+                this->fV.col(last-3) = to_4_point(flatV.col(0));
+                this->fV.col(last-2) = to_4_point(flatV.col(1));
+                this->fV.col(last-1) = to_4_point(flatV.col(2));
+                this->idx2meshId[last-3] = meshId;
             }
 
             // update flat position to VBO, compute bounding box
@@ -629,6 +666,18 @@ class FlattenObject {
             this->ModelMat = Eigen::MatrixXf::Identity(4,4);
             this->T_to_ori = Eigen::MatrixXf::Identity(4,4);
             this->barycenter = Eigen::Vector4f(0.0, 0.0, 0.0, 1.0);
+
+            // check tree
+            Mesh* root = &meshes.begin()->second;
+            std::queue<Mesh*> q;
+            q.push(root);
+            while (!q.empty()) {
+                Mesh* cur = q.front();
+                q.pop();
+                for (Mesh* child: cur->childs) {
+                    q.push(child);
+                }
+            }
         }
         
         bool flattenMesh(int preMeshId, int meshId, std::pair<int, int> edge, std::set<int> &flattened) {
@@ -655,7 +704,29 @@ class FlattenObject {
             mesh.vid2fv[fv2] = preMesh.vid2fv[fv2];
             mesh.vid2fv[v3] = fv3Pos;
 
-            // std::cout << "exit flattenMesh" << std::endl;
+            // compute rotate angle
+            Eigen::Vector3f curh = mesh.getH(edge).normalized();
+            Eigen::Vector3f preh = preMesh.getH(edge).normalized();
+            double rotAngle = 180. - acos(curh.dot(preh)) * 180.0/PI;
+
+            Eigen::Vector3f fv1Pos = mesh.vid2fv[fv1];
+            Eigen::Vector3f fv2Pos = mesh.vid2fv[fv2];
+            Eigen::Vector3f edgefA = fv1Pos, edgefB = fv2Pos;
+            Eigen::Vector3f edgeA = mesh.vid2v[fv1], edgeB = mesh.vid2v[fv2];;
+            if (fv2 < fv1) {
+                edgeA = mesh.vid2v[fv2]; edgeB = mesh.vid2v[fv1];
+            }
+            Eigen::Vector3f fRotAixs = (edgefA-edgefB).normalized();
+            Eigen::Vector3f rotAixs = (edgeA-edgeB).normalized();
+            if ((curh.cross(preh)).dot(rotAixs) < 0. ) rotAngle = -rotAngle;
+
+            mesh.R = get_rotate_mat(rotAngle, edgefA, edgefB);
+            mesh.edgeA = edgefA;
+            mesh.edgeB = edgefB;
+            mesh.rotEdge = std::make_pair(fv1, fv2);
+            mesh.rotAngle = rotAngle;
+            mesh.rotAixs = fRotAixs;
+
             return true;
         }
 
@@ -685,17 +756,19 @@ class FlattenObject {
             flat2 = fH + h * (-flatDir);
 
             // check overlap
+            bool canFlat = false;
             if (!overlap(flat1, fv1Pos, fv2Pos, flattened)) {
                 fv3Pos = flat1;
-                return true;
+                canFlat = true;
             }
             else {
                 if (!overlap(flat2, fv1Pos, fv2Pos, flattened)) {
                     fv3Pos = flat2;
-                    return true;
+                    canFlat = true;
                 }
             }
-            return false;
+
+            return canFlat;
         }
 
         bool overlap(Eigen::Vector3f flatPos, Eigen::Vector3f fv1Pos, Eigen::Vector3f fv2Pos, std::set<int> &flattened) {
@@ -1149,7 +1222,7 @@ class _3dObject {
             // scale the whole paper to fit the window
             double scaleFactor = fmin(1.0/(paperT-paperB), 1.0/(paperR-paperL));
             Eigen::MatrixXf S = Eigen::MatrixXf::Identity(4, 4);
-            S.col(0)(0) = scaleFactor; S.col(1)(1) = scaleFactor;
+            S.col(0)(0) = scaleFactor; S.col(1)(1) = scaleFactor; S.col(2)(2) = scaleFactor;
             // std::cout << "scaleFactor" << std::endl;
             // std::cout << scaleFactor << std::endl;
             for (FlattenObject &flatObj: this->flattenObjs) {
@@ -1173,8 +1246,8 @@ class _3dObject {
             Eigen::Vector4f bleftTop = Eigen::Vector4f(bminx, bmaxy, 0., 1.);
             bleftTop = flatObj.ModelMat*bleftTop;
             Eigen::Vector2f delta = leftTop - Eigen::Vector2f(bleftTop.x(), bleftTop.y());
-            std::cout << "island move delta" << std::endl;
-            std::cout << delta << std::endl;
+            // std::cout << "island move delta" << std::endl;
+            // std::cout << delta << std::endl;
             flatObj.translate(Eigen::Vector4f(delta(0), delta(1), 0., 0.));
         }
 };
@@ -1347,15 +1420,64 @@ class _3dObjectBuffer {
             return svg_str;
         }
 };
+class Player {
+    public:
+        bool playing;
+        double frames;
+        int frame;
+        std::queue<Mesh*> waitlist;
+
+        void init(_3dObject* obj3d) {
+            FlattenObject& flatObj = obj3d->flattenObjs[0];
+            waitlist.push(&flatObj.meshes.begin()->second);
+            frames = 10.;
+            frame = 0;
+            playing = true;
+        }
+        void nextFrame() {
+            updateAnimateMats();
+        }
+        void updateAnimateMats() {
+            // std::cout << "update animate matrix" << std::endl;
+            frame += 1;
+            const double dt = frame/frames;
+            if (dt > 1.) {
+                // dt = 0.;
+                frame = 0;
+                Mesh* root = waitlist.front();
+                waitlist.pop();
+                for (Mesh* child: root->childs) {
+                    child->accR = root->animeM;
+                    waitlist.push(child);
+                }
+            }
+            // BFS update
+            if (!waitlist.empty()) {
+                Mesh* root = waitlist.front();
+                std::queue<Mesh*> q;
+                q.push(root);
+                Eigen::Matrix4f R = get_rotate_mat(dt*root->rotAngle, root->edgeA, root->edgeB);
+                root->animeM = root->accR * R;
+                while (!q.empty()) {
+                    Mesh* cur = q.front();
+                    q.pop();
+                    for (Mesh* child: cur->childs) {
+                        child->animeM = root->animeM;
+                        q.push(child);
+                    }
+                }
+            }
+            else {
+                playing = false;
+                std::cout << "end keyframe playing" << std::endl;
+            }
+        }
+};
 
 _3dObjectBuffer* _3d_objs_buffer;
 std::vector<_3dObject*>* _3d_objs;
 Camera *camera;
-std::chrono::high_resolution_clock::time_point t_pre;
-bool is_playing = false;
-int playing_cnt = 0;
-double unitTime = 0.;
-Eigen::MatrixXf AnimeT;
+Player player = Player();
 
 void export_svg(GLFWwindow* window) {
     std::string svg_str = get_svg_root_template();
@@ -1718,11 +1840,19 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         // flatten the selected 3d object
         case GLFW_KEY_F:
             if (action == GLFW_PRESS) {
-                if (_3d_objs_buffer->selected_obj != nullptr) {
+                if (_3d_objs_buffer->selected_obj != nullptr && !player.playing) {
                     glfwSetWindowTitle (window, "flatten the selected 3d object");
                     _3d_objs_buffer->selected_obj->flatten();
                     _3d_objs_buffer->selected_flat_obj = nullptr;
-                    _3d_objs_buffer->selected_obj = nullptr;
+                }
+            }
+            break;
+        // play animation
+        case GLFW_KEY_SPACE:
+            if (action == GLFW_PRESS) {
+                if (_3d_objs_buffer->selected_obj != nullptr) {
+                    glfwSetWindowTitle (window, "play animation");
+                    player.init(_3d_objs_buffer->selected_obj);
                 }
             }
             break;
@@ -1794,10 +1924,11 @@ int main(void)
                     "uniform mat4 ViewMat;"
                     "uniform mat4 ModelMat;"
                     "uniform mat4 ProjectMat;"
+                    "uniform mat4 AnimateT;"
                     "out vec3 f_color;"
                     "void main()"
                     "{"
-                    "    gl_Position = ProjectMat*ViewMat*ModelMat*position;"
+                    "    gl_Position = ProjectMat*ViewMat*ModelMat*AnimateT*position;"
                     "    f_color = color;"
                     "}";
     const GLchar* fragment_shader =
@@ -1846,6 +1977,7 @@ int main(void)
     special_color = (BLACK.cast<float>())/255.0;
     // special_color = (WHITE.cast<float>())/255.0;
     glUniform3fv(program.uniform("lineColor"), 1, special_color.data());
+    Eigen::MatrixXf I44 = Eigen::MatrixXf::Identity(4,4);
 
     // Loop until the user closes the window
     while (!glfwWindowShouldClose(window))
@@ -1872,7 +2004,8 @@ int main(void)
         // glUniform3fv(program.uniform("color"), 1, special_color.data());
         Eigen::Vector3f red = (RED.cast<float>())/255.0;
         glUniform4fv(program.uniform("viewPosition"), 1, tmp.data());
-        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->flatViewMat.data());
+        // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->flatViewMat.data());
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
         glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, camera->get_project_mat().data());
 
         int WindowWidth, WindowHeight;
@@ -1881,16 +2014,24 @@ int main(void)
         // right screen
         glViewport(WindowWidth, 0, WindowWidth, WindowHeight*2);
 
+        if (player.playing) {
+            player.nextFrame();
+        }
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             // prepare
             for (FlattenObject &flatObj: obj->flattenObjs) {
-                // auto flatObj = obj->flattenObj;
                 glUniformMatrix4fv(program.uniform("ModelMat"), 1, GL_FALSE, flatObj.ModelMat.data());
 
                 flatObj.VAO.bind();
                 program.bindVertexAttribArray("position", flatObj.VBO_P);
                 glUniform3fv(program.uniform("color"), 1, white.data());
                 for (int i = 0; i < flatObj.fV.cols(); i += 3) {
+                    // get animation model matrix
+                    int meshId = flatObj.idx2meshId[i];
+                    Mesh &mesh = flatObj.meshes[meshId];
+                    Eigen::Matrix4f AnimateT = mesh.animeM;
+                    glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, AnimateT.data());
+
                     glUniform1i(program.uniform("isLine"), 1);
                     glDrawArrays(GL_LINE_LOOP, i, 3);
                     glUniform1i(program.uniform("isLine"), 0);
@@ -1902,6 +2043,7 @@ int main(void)
         // left screen
         glViewport(0, 0, WindowWidth, WindowHeight*2);
         glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->ViewMat.data());
+        glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, I44.data());
 
         for (auto obj: _3d_objs_buffer->_3d_objs) {
             obj->VAO.bind();
@@ -1923,8 +2065,6 @@ int main(void)
 
         // Swap front and back buffers
         glfwSwapBuffers(window);
-
-        if (playing_cnt > 0) continue;
         
         // Poll for and process events
         glfwPollEvents();

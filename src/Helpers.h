@@ -179,6 +179,9 @@ Eigen::MatrixXf get_ortho_matrix(float l, float r, float b, float t, float n, fl
 Eigen::Vector4f to_4_vec(Eigen::Vector3f vec);
 Eigen::Vector4f to_4_point(Eigen::Vector3f vec);
 Eigen::Matrix4f mat_to_4(Eigen::Matrix3f M);
+Eigen::Vector3f get_vertical_vec(Eigen::Vector3f vech3, Eigen::Vector3f rotAixs);
+Eigen::Matrix4f get_rotate_mat(double angle, Eigen::Vector3f edgeA, Eigen::Vector3f edgeB);
+Eigen::Matrix4f get_rotate_mat(double angle, Eigen::Vector3f rotateAxis);
 
 std::string replace_all(std::string str, const std::string& from, const std::string& to);
 std::string get_tri_g_template();

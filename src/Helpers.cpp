@@ -367,3 +367,57 @@ std::string get_path_template() {
   std::string PATH_TEMPLATE = "<path d='$path' fill='none' stroke='black' stroke-width='0.003'/>";
   return PATH_TEMPLATE;
 }
+
+Eigen::Matrix4f get_rotate_mat(double angle, Eigen::Vector3f edgeA, Eigen::Vector3f edgeB) {
+  // move rotate axis to origin
+  Eigen::Vector3f delta = -edgeB;
+  // std::cout << "edgeB" << std::endl;
+  // std::cout << edgeB << std::endl;
+  // Eigen::Matrix4f T = Eigen::MatrixXf::Identity(4, 4);
+  // Eigen::Matrix4f T_back = Eigen::MatrixXf::Identity(4, 4);
+  // T.col(3)(0) = delta(0); T.col(3)(1) = delta(1); T.col(3)(2) = delta(2);
+  // T_back.col(3)(0) = -delta(0); T_back.col(3)(1) = -delta(1); T_back.col(3)(2) = -delta(2);
+
+  Eigen::Vector3f rotateAxis = (edgeA-edgeB).normalized();
+  double r = (PI/180) * (angle/2);
+  double x = rotateAxis.x() * sin(r);
+  double y = rotateAxis.y() * sin(r);
+  double z = rotateAxis.z() * sin(r);
+  double w = cos(r);
+  Eigen::Matrix4f rotate_mat;
+  rotate_mat << 
+  1-2*y*y-2*z*z, 2*x*y-2*z*w, 2*x*z+2*y*w, 0,
+  2*x*y+2*z*w, 1-2*x*x-2*z*z, 2*y*x-2*x*w, 0,
+  2*x*z-2*y*w, 2*y*z+2*x*w, 1-2*x*x-2*y*y, 0,
+  0,0,0,1;
+  
+  Eigen::Vector4f tmp = to_4_point(edgeB)-rotate_mat*to_4_point(edgeB);
+  rotate_mat.col(3) = tmp;
+  rotate_mat.col(3)(3) = 1.;
+
+  return rotate_mat;
+}
+
+Eigen::Matrix4f get_rotate_mat(double angle, Eigen::Vector3f rotateAxis) {
+  rotateAxis = rotateAxis.normalized();
+  double r = (PI/180) * (angle/2);
+  double x = rotateAxis.x() * sin(r);
+  double y = rotateAxis.y() * sin(r);
+  double z = rotateAxis.z() * sin(r);
+  double w = cos(r);
+  Eigen::Matrix4f rotate_mat;
+  rotate_mat << 
+  1-2*y*y-2*z*z, 2*x*y-2*z*w, 2*x*z+2*y*w, 0,
+  2*x*y+2*z*w, 1-2*x*x-2*z*z, 2*y*x-2*x*w, 0,
+  2*x*z-2*y*w, 2*y*z+2*x*w, 1-2*x*x-2*y*y, 0,
+  0,0,0,1;
+  
+  return rotate_mat;
+}
+
+Eigen::Vector3f get_vertical_vec(Eigen::Vector3f vech3, Eigen::Vector3f rotAixs) {
+  double len = vech3.dot(rotAixs);
+  Eigen::Vector3f parallel = len*rotAixs;
+  Eigen::Vector3f vertrical = vech3-parallel;
+  return vertrical;
+}
