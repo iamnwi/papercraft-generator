@@ -85,13 +85,12 @@ class Camera {
         double theta;
         int phi, zeta;
         double radius;
-        int focusWindow;
 
         Camera(GLFWwindow* window, Eigen::Vector3d position=Eigen::Vector3d(0.0, 0.0, 3.0), int project_mode = ORTHO) {
             // set GLOBAL UP to y-axis as default, set look at target as origin(0,0,0)
             this->global_up = Eigen::Vector3d(0.0, 1.0, 0.0);
             this->n = 2.0; this->f = 100.0;
-            // FOV angle is hardcoded to 60 degrees
+            // FOV angle is initially 60 degrees
             this->theta = (PI/180) * 60;
             // trackball
             this->target = Eigen::Vector3d(0.0, 0.0, 0.0);
@@ -108,8 +107,6 @@ class Camera {
             this->update_camera_pos();
             this->look_at(window);
             this->project_mode = project_mode;
-
-            this->focusWindow = LEFTSUBWINDOW;
         }
         void update_camera_pos() {
             double rphi = (PI/180.0)*this->phi, rzeta = (PI/180.0)*this->zeta;
@@ -125,8 +122,7 @@ class Camera {
             this->update_camera_pos();
         }
         void zoom(double factor) {
-            this->radius *= factor;
-            this->update_camera_pos();
+            this->theta *= factor;
         }
         void zoom2D(double factor) {
             this->flatViewMat.col(0)(0) *= factor;
@@ -138,19 +134,10 @@ class Camera {
             this->flatViewMat.col(3) += delta;
         }
         void reset() {
-            if (this->focusWindow == LEFTSUBWINDOW) {
-                this->phi = 0;
-                this->zeta = 0;
-                this->update_camera_pos();
-            }
-            else {
-                Eigen::Vector3d position = Eigen::Vector3d(0.0, 0.0, 3.0);
-                this->flatViewMat << 
-                    1.0, 0.0, 0.0, -position(0),
-                    0.0, 1.0, 0.0, -position(1),
-                    0.0, 0.0, 1.0, -position(2),
-                    0.0, 0.0, 0.0, 1.0;
-            }
+            this->theta = (PI/180) * 60;
+            this->phi = 0;
+            this->zeta = 0;
+            this->update_camera_pos();
         }
         void look_at(GLFWwindow* window, Eigen::Vector3d target = Eigen::Vector3d(0.0, 0.0, 0.0)) {
             this->forward = (this->position - this->target).normalized();
@@ -214,7 +201,6 @@ class Camera {
             2.0/(r-l), 0.0, 0.0, -(r+l)/(r-l),
             0.0, 2.0/(t-b), 0.0, -(t+b)/(t-b),
             0.0, 0.0, -2.0/(f-n), -(f+n)/(f-n),
-            // 0.0, 0.0, -2.0/(f-n), -(n+f)/(n-f),
             0.0, 0.0, 0.0, 1.0;
 
             this->perspect_mat <<
@@ -1507,10 +1493,30 @@ class Player {
             }
         }
 };
+class CameraBuffer {
+    public:
+        std::vector<Camera*> cameras;
+        int focusWindow;
+        CameraBuffer(GLFWwindow* window, int size) {
+            for (int i = 0; i < size; i++)
+                cameras.push_back(new Camera(window));
+            focusWindow = 0;
+        }
+        Camera* getCamera() {
+            return cameras[focusWindow];
+        }
+        void updateWindowScale(GLFWwindow* window) {
+            for (auto camera: cameras) {
+                camera->update_project_mat(window);
+                camera->look_at(window);
+            }
+        }
+};
 
 _3dObjectBuffer* _3d_objs_buffer;
 std::vector<_3dObject*>* _3d_objs;
-Camera *camera;
+// Camera *camera;
+CameraBuffer* camera_buf;
 Player player = Player();
 
 void export_svg(GLFWwindow* window) {
@@ -1523,18 +1529,13 @@ void export_svg(GLFWwindow* window) {
     std::cout << "w: " << width << "h: " << height << std::endl;
     std::cout << "aspect " << aspect << std::endl;
     // flatten objects
-    std::string flat_svg_str = _3d_objs_buffer->export_flat_svg(camera);
+    std::string flat_svg_str = _3d_objs_buffer->export_flat_svg(camera_buf->getCamera());
     svg_str = replace_all(svg_str, "$TG", flat_svg_str);
     // Save svg to file
     std::ofstream svg_file;
     svg_file.open ("export.svg");
     svg_file << svg_str;
     svg_file.close();
-}
-
-void update_window_scale(GLFWwindow* window) {
-    camera->update_project_mat(window);
-    camera->look_at(window);
 }
 
 Eigen::Vector4d get_click_position(GLFWwindow* window, int &subWindow) {
@@ -1558,6 +1559,7 @@ Eigen::Vector4d get_click_position(GLFWwindow* window, int &subWindow) {
         subWindow = LEFTSUBWINDOW;
         p_screen = Eigen::Vector4d(xpos*2,height-1-ypos,0.0,1.0);
     }
+    Camera* camera = camera_buf->getCamera();
     Eigen::Vector4d p_canonical((p_screen[0]/width)*2-1,(p_screen[1]/height)*2-1,-camera->n,1.0);
     Eigen::Vector4d p_camera = camera->get_project_mat().inverse() * p_canonical;
     if (fabs(p_camera(3)-1.0) > 0.001) {
@@ -1583,7 +1585,8 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     // Convert screen position to world coordinates
     int subWindow;
     Eigen::Vector4d click_point = get_click_position(window, subWindow);
-    camera->focusWindow = subWindow;
+    camera_buf->focusWindow = subWindow;
+    Camera* camera = camera_buf->getCamera();
 
     // Update the position of the first vertex if the left button is pressed
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
@@ -1629,6 +1632,7 @@ void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
+    Camera* camera = camera_buf->getCamera();
     switch (key)
     {
         // export svg
@@ -1772,85 +1776,45 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         // Move the camera
         case GLFW_KEY_LEFT:
             if (action == GLFW_PRESS) {
-                if (camera->focusWindow == LEFTSUBWINDOW) {
-                    glfwSetWindowTitle (window, "rotate camera to left 10 degree");
-                    camera->rotate(0, -10);
-                    camera->look_at(window);
-                }
-                else {
-                    glfwSetWindowTitle (window, "pan camera left 20%");
-                    Eigen::Vector4d delta(2*0.2, 0, 0, 0);
-                    camera->pan2D(delta);
-                }
+                glfwSetWindowTitle (window, "rotate camera to left 10 degree");
+                camera->rotate(0, -10);
+                camera->look_at(window);
             }
             break;
         case GLFW_KEY_RIGHT:
             if (action == GLFW_PRESS) {
-                if (camera->focusWindow == LEFTSUBWINDOW) {
-                    glfwSetWindowTitle (window, "rotate camera to right 10 degree");
-                    camera->rotate(0, 10);
-                    camera->look_at(window);
-                }
-                else {
-                    glfwSetWindowTitle (window, "pan camera right 20%");
-                    Eigen::Vector4d delta(-2*0.2, 0, 0, 0);
-                    camera->pan2D(delta);
-                }
+                glfwSetWindowTitle (window, "rotate camera to right 10 degree");
+                camera->rotate(0, 10);
+                camera->look_at(window);
             }
             break;
         case GLFW_KEY_UP:
             if (action == GLFW_PRESS) {
-                if (camera->focusWindow == LEFTSUBWINDOW) {
-                    glfwSetWindowTitle (window, "rotate camera to up 10 degree");
-                    camera->rotate(10, 0);
-                    camera->look_at(window);
-                }
-                else {
-                    glfwSetWindowTitle (window, "pan camera up 20%");
-                    Eigen::Vector4d delta(0, -2*0.2, 0, 0);
-                    camera->pan2D(delta);
-                }
+                glfwSetWindowTitle (window, "rotate camera to up 10 degree");
+                camera->rotate(10, 0);
+                camera->look_at(window);
             }
             break;
         case GLFW_KEY_DOWN:
             if (action == GLFW_PRESS) {
-                if (camera->focusWindow == LEFTSUBWINDOW) {
-                    glfwSetWindowTitle (window, "rotate camera to down 10 degree");
-                    camera->rotate(-10, 0);
-                    camera->look_at(window);
-                }
-                else {
-                    glfwSetWindowTitle (window, "pan camera down 20%");
-                    Eigen::Vector4d delta(0, 2*0.2, 0, 0);
-                    camera->pan2D(delta);
-                }
+                glfwSetWindowTitle (window, "rotate camera to down 10 degree");
+                camera->rotate(-10, 0);
+                camera->look_at(window);
             }
             break;
         // zoom in / zoom out
         case GLFW_KEY_EQUAL:
             if (action == GLFW_PRESS) {
-                if (camera->focusWindow == LEFTSUBWINDOW) {
-                    glfwSetWindowTitle (window, "right-subwindow zoom in 10%");
-                    camera->zoom(0.9);
-                    camera->look_at(window);
-                }
-                else {
-                    glfwSetWindowTitle (window, "right-subwindow zoom in 20%");
-                    camera->zoom2D(1.2);
-                }
+                glfwSetWindowTitle (window, "right-subwindow zoom in 10%");
+                camera->zoom(0.9);
+                camera->look_at(window);
             }
             break;
         case GLFW_KEY_MINUS:
             if (action == GLFW_PRESS) {
-                if (camera->focusWindow == LEFTSUBWINDOW) {
-                    glfwSetWindowTitle (window, "left-subwindow zoom out 10%");
-                    camera->zoom(1.0/0.9);
-                    camera->look_at(window);
-                }
-                else {
-                    glfwSetWindowTitle (window, "left-subwindow zoom out 20%");
-                    camera->zoom2D(1.0/1.2);
-                }
+                glfwSetWindowTitle (window, "left-subwindow zoom out 10%");
+                camera->zoom(1.0/0.9);
+                camera->look_at(window);
             }
             break;
         // reset camera
@@ -2001,7 +1965,8 @@ int main(void)
 
     // Inital control objects
     _3d_objs_buffer = new _3dObjectBuffer();
-    camera = new Camera(window);
+    // camera = new Camera(window);
+    camera_buf = new CameraBuffer(window, 2);
 
     // bind light
     // auto light = _3d_objs_buffer->ray_tracer->lights[0];
@@ -2031,24 +1996,23 @@ int main(void)
         glEnable(GL_PROGRAM_POINT_SIZE);
 
         // Update window scaling
-        update_window_scale(window);
-        // Send the View Mat to Vertex Shader
-        Eigen::Vector4d tmp;
-        tmp(0) = camera->position(0); tmp(1) = camera->position(1); tmp(2) = camera->position(2);
-        tmp(3) = 1.0;
+        camera_buf->updateWindowScale(window);
+        
+        // define render color
         Eigen::Vector3d white = (WHITE.cast<double>())/255.0;
-        // glUniform3fv(program.uniform("color"), 1, special_color.data());
         Eigen::Vector3d red = (RED.cast<double>())/255.0;
-        glUniform4fv(program.uniform("viewPosition"), 1, v_to_float(tmp).data());
-        // glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, camera->flatViewMat.data());
-        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, m_to_float(camera->ViewMat).data());
-        glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, m_to_float(camera->get_project_mat()).data());
 
         int WindowWidth, WindowHeight;
         glfwGetWindowSize(window, &WindowWidth, &WindowHeight);
 
         // right screen
         glViewport(WindowWidth, 0, WindowWidth, WindowHeight*2);
+        // Send the View Mat to Vertex Shader
+        Camera* rightCam = camera_buf->cameras[1];
+        Eigen::Vector4d rightCamPos = to_4_point(rightCam->position);
+        glUniform4fv(program.uniform("viewPosition"), 1, v_to_float(rightCamPos).data());
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, m_to_float(rightCam->ViewMat).data());
+        glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, m_to_float(rightCam->get_project_mat()).data());
 
         if (player.playing) {
             player.nextFrame();
@@ -2080,7 +2044,13 @@ int main(void)
 
         // left screen
         glViewport(0, 0, WindowWidth, WindowHeight*2);
-        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, m_to_float(camera->ViewMat).data());
+        // Send the View Mat to Vertex Shader
+        Camera* leftCam = camera_buf->cameras[0];
+        Eigen::Vector4d leftCamPos = to_4_point(leftCam->position);
+        glUniform4fv(program.uniform("viewPosition"), 1, v_to_float(leftCamPos).data());
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, m_to_float(leftCam->ViewMat).data());
+        glUniformMatrix4fv(program.uniform("ProjectMat"), 1, GL_FALSE, m_to_float(leftCam->get_project_mat()).data());
+        glUniformMatrix4fv(program.uniform("ViewMat"), 1, GL_FALSE, m_to_float(leftCam->ViewMat).data());
         glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, m_to_float(I44).data());
 
         for (auto obj: _3d_objs_buffer->_3d_objs) {
