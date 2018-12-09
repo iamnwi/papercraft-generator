@@ -68,7 +68,7 @@ void IndexBufferObject::update(const Eigen::VectorXi& V)
 {
   assert(id != 0);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, id);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(float)*V.size(), V.data(), GL_DYNAMIC_DRAW);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(double)*V.size(), V.data(), GL_DYNAMIC_DRAW);
   rows = V.rows();
   cols = V.cols();
   check_gl_error();
@@ -220,7 +220,7 @@ void _check_gl_error(const char *file, int line)
   }
 }
 
-bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXf &V, Eigen::MatrixXf &C, Eigen::VectorXi &IDX) {
+bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXd &V, Eigen::MatrixXd &C, Eigen::VectorXi &IDX) {
     // Open OFF file
     std::ifstream inFile;
     inFile.open(filepath);
@@ -236,12 +236,12 @@ bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXf &V, Eigen::MatrixXf &
     inFile >> dummy >> vnums >> fnums >> enums;
 
     // Read vertexes
-    V = Eigen::MatrixXf(4, 0);
+    V = Eigen::MatrixXd(4, 0);
     for (int i = 0; i < vnums; i++) {
         double x,y,z;
         inFile >> x >> y >> z;
         V.conservativeResize(V.rows(), V.cols()+1);
-        V.col(i) = Eigen::Vector4f(x, y, z, 1);
+        V.col(i) = Eigen::Vector4d(x, y, z, 1);
     }
 
     std::cout << vnums << " vertexes loaded" << std::endl;
@@ -264,7 +264,7 @@ bool loadMeshfromOFF(std::string filepath, Eigen::MatrixXf &V, Eigen::MatrixXf &
     return true;
 }
 
-Eigen::MatrixXf get_bounding_box(Eigen::MatrixXf V) {
+Eigen::MatrixXd get_bounding_box(Eigen::MatrixXd V) {
   double maxx = -100, maxy = -100, maxz = -100;
   double minx = 100, miny = 100, minz = 100;
   for (int i = 0; i < V.cols(); i++) {
@@ -276,13 +276,13 @@ Eigen::MatrixXf get_bounding_box(Eigen::MatrixXf V) {
     if (y < miny) miny = y;
     if (z < minz) minz = z;
   }
-  Eigen::MatrixXf bounding_box(4, 2);
+  Eigen::MatrixXd bounding_box(4, 2);
   bounding_box << minx, maxx, miny, maxy, minz, maxz, 1, 1;
   std::cout << "Bouncing Box" << std::endl << bounding_box << std::endl;
   return bounding_box;
 }
 
-Eigen::MatrixXf get_bounding_box_2d(Eigen::MatrixXf V) {
+Eigen::MatrixXd get_bounding_box_2d(Eigen::MatrixXd V) {
   // compute bounding box
   double maxx = -100, maxy = -100;
   double minx = 100, miny = 100;
@@ -293,32 +293,32 @@ Eigen::MatrixXf get_bounding_box_2d(Eigen::MatrixXf V) {
       if (x < minx) minx = x;
       if (y < miny) miny = y;
   }
-  Eigen::MatrixXf bounding_box(2, 2);
+  Eigen::MatrixXd bounding_box(2, 2);
   bounding_box << minx, maxx, miny, maxy;
   return bounding_box;
 }
 
-Eigen::MatrixXf get_ortho_matrix(float l, float r, float b, float t, float n, float f) {
-  Eigen::Matrix4f ortho = Eigen::MatrixXf::Identity(4,4);
+Eigen::MatrixXd get_ortho_matrix(double l, double r, double b, double t, double n, double f) {
+  Eigen::Matrix4d ortho = Eigen::MatrixXd::Identity(4,4);
   ortho.col(0)(0) = 2.0/(r-l); ortho.col(3)(0) = -(r+l)/(r-l);
   ortho.col(1)(1) = 2.0/(t-b); ortho.col(3)(1) = -(t+b)/(t-b);
   ortho.col(2)(2) = 2.0/(n-f); ortho.col(3)(2) = -(n+f)/(n-f);
   return ortho;
 }
-Eigen::Vector3f to_3(Eigen::Vector4f X) {
-  return Eigen::Vector3f(X(0), X(1), X(2));
+Eigen::Vector3d to_3(Eigen::Vector4d X) {
+  return Eigen::Vector3d(X(0), X(1), X(2));
 }
 
-Eigen::Vector4f to_4_vec(Eigen::Vector3f vec) {
-  return Eigen::Vector4f(vec.x(), vec.y(), vec.z(), 0);
+Eigen::Vector4d to_4_vec(Eigen::Vector3d vec) {
+  return Eigen::Vector4d(vec.x(), vec.y(), vec.z(), 0);
 }
 
-Eigen::Vector4f to_4_point(Eigen::Vector3f vec) {
-  return Eigen::Vector4f(vec.x(), vec.y(), vec.z(), 1.0);
+Eigen::Vector4d to_4_point(Eigen::Vector3d vec) {
+  return Eigen::Vector4d(vec.x(), vec.y(), vec.z(), 1.0);
 }
 
-Eigen::Matrix4f mat_to_4(Eigen::Matrix3f M3) {
-  Eigen::Matrix4f M4 = Eigen::MatrixXf::Identity(4, 4);
+Eigen::Matrix4d mat_to_4(Eigen::Matrix3d M3) {
+  Eigen::Matrix4d M4 = Eigen::MatrixXd::Identity(4, 4);
   for (int i = 0; i < 3; i++) {
     for (int j = 0; j < 3; j++) {
       M4.col(i)(j) = M3.col(i)(j);
@@ -327,7 +327,7 @@ Eigen::Matrix4f mat_to_4(Eigen::Matrix3f M3) {
   return M4;
 }
 
-std::string get_color_RGB(Eigen::Vector3f C) {
+std::string get_color_RGB(Eigen::Vector3d C) {
   std::string color_hex = "rgb(#R, #G, #B)";
   color_hex = replace_all(color_hex, "#R", std::to_string(int(C(0))));
   color_hex = replace_all(color_hex, "#G", std::to_string(int(C(1))));
@@ -366,4 +366,70 @@ std::string get_tri_g_template() {
 std::string get_path_template() {
   std::string PATH_TEMPLATE = "<path d='$path' fill='none' stroke='black' stroke-width='0.003'/>";
   return PATH_TEMPLATE;
+}
+
+Eigen::Matrix4d get_rotate_mat(double rad, Eigen::Vector3d edgeA, Eigen::Vector3d edgeB) {
+  Eigen::Vector3d rotateAxis = (edgeA-edgeB).normalized();
+  double r = rad/2;
+  double x = rotateAxis.x() * sin(r);
+  double y = rotateAxis.y() * sin(r);
+  double z = rotateAxis.z() * sin(r);
+  double w = cos(r);
+  Eigen::Matrix4d rotate_mat;
+  rotate_mat << 
+  1-2*y*y-2*z*z, 2*x*y-2*z*w, 2*x*z+2*y*w, 0,
+  2*x*y+2*z*w, 1-2*x*x-2*z*z, 2*y*x-2*x*w, 0,
+  2*x*z-2*y*w, 2*y*z+2*x*w, 1-2*x*x-2*y*y, 0,
+  0,0,0,1;
+  
+  // Translate
+  Eigen::Vector4d tmp = to_4_point(edgeA)-rotate_mat*to_4_point(edgeA);
+  rotate_mat.col(3) = tmp;
+  rotate_mat.col(3)(3) = 1.;
+
+  return rotate_mat;
+}
+
+Eigen::Matrix4d get_rotate_mat(double rotDot, double rotSign, Eigen::Vector3d edgeA, Eigen::Vector3d edgeB) {
+  double cosVal = sqrt(0.5*(rotDot+1.0));
+  double sinVal = sqrt(0.5*(1.0-rotDot))*rotSign;
+  Eigen::Vector3d rotateAxis = (edgeA-edgeB).normalized();
+
+  // double r = rad/2;
+  double x = rotateAxis.x() * sinVal;
+  double y = rotateAxis.y() * sinVal;
+  double z = rotateAxis.z() * sinVal;
+  double w = cosVal;
+  Eigen::Matrix4d rotate_mat;
+  rotate_mat << 
+  1-2*y*y-2*z*z, 2*x*y-2*z*w, 2*x*z+2*y*w, 0,
+  2*x*y+2*z*w, 1-2*x*x-2*z*z, 2*y*x-2*x*w, 0,
+  2*x*z-2*y*w, 2*y*z+2*x*w, 1-2*x*x-2*y*y, 0,
+  0,0,0,1;
+  
+  // Translate
+  Eigen::Vector3d mid = 0.5*(edgeA+edgeB);
+  Eigen::Vector4d tmp = to_4_point(mid)-rotate_mat*to_4_point(mid);
+  
+  rotate_mat.col(3) = tmp;
+  rotate_mat.col(3)(3) = 1.;
+
+  return rotate_mat;
+}
+
+Eigen::Vector3d get_vertical_vec(Eigen::Vector3d vech3, Eigen::Vector3d rotAixs) {
+  double len = vech3.dot(rotAixs);
+  Eigen::Vector3d parallel = len*rotAixs;
+  Eigen::Vector3d vertrical = vech3-parallel;
+  return vertrical;
+}
+
+Eigen::VectorXf v_to_float(Eigen::VectorXd in) {
+  Eigen::VectorXf out = in.cast<float>();
+  return out;
+}
+
+Eigen::MatrixXf m_to_float(Eigen::MatrixXd in) {
+  Eigen::MatrixXf out = in.cast<float>();
+  return out;
 }
