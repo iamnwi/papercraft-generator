@@ -1234,17 +1234,24 @@ class _3dObject {
             }
 
             // arrange the layout of islands on paper
-            double paperL = 0., paperT = 0., paperR = 0., paperB = 0.;
+            double maxW = 0.;
+            for (auto box: islandsBoxs) {
+                maxW = fmax(maxW, box.col(1).x()-box.col(0).x());
+            }
+            double paperL = 0., paperT = 0., paperR = maxW, paperB = 0.;
             double curX = paperL, curY = paperT;
             double margin = 0.1;
             for (int i = 0; i < this->flattenObjs.size(); i++) {
                 FlattenObject &flatObj = this->flattenObjs[i];
                 Eigen::Matrix2d box = islandsBoxs[i];
                 double w = box.col(1).x()-box.col(0).x(), h = box.col(1).y()-box.col(0).y();
-                islandMoveTo(paperL, curY, box, flatObj);
-                curY -= h+margin;
-                paperR = fmax(paperR, w);
-                paperB = fmin(paperB, curY);
+                if (curX+w+margin > paperR) {
+                    curX = paperL;
+                    curY = paperB;
+                }
+                islandMoveTo(curX, curY, box, flatObj);
+                curX += w+margin;
+                paperB = fmin(paperB, curY-(h+margin));
             }
 
             // scale the whole paper to fit the window
