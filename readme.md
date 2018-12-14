@@ -1,4 +1,4 @@
-# Assignment 4: Final Project
+# Assignment 4: Final Project[![Build Status](https://travis-ci.com/NYUGraphics/final-project-iamnwi.svg?token=mK1JygKbSRwpqpg5DuvP&branch=master)](https://travis-ci.com/NYUGraphics/assignment1-iamnwi)
 
 1. maximal spanning forest for flattening
     1. prime algorithm
