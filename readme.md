@@ -21,7 +21,7 @@
     1. support non-contiguous selection areas
 6. svg export
 7. animation
-    1. restore the original position of every vertex by traversing the MST
+    1. restore the related position of every vertex by traversing the MST
     2. every tree node of MST store the rotation quaternion, use it to construct rotation matrix
     3. compute the rotation matrix of every frame by interpolating rotation matrix
     4. the move of a subtree root should spread to all nodes of the subtree
