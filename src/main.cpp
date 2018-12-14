@@ -731,10 +731,10 @@ class FlattenObject {
             double rotRad = PI-acos(curh.dot(preh));
             double rotDot = -curh.dot(preh);
             double rotSign = 1;
-            std::cout << "curh.dot(preh)" << std::endl;
-            std::cout << curh.dot(preh) << std::endl;
-            std::cout << "rotAngle" << std::endl;
-            std::cout << rotAngle << std::endl;
+            // std::cout << "curh.dot(preh)" << std::endl;
+            // std::cout << curh.dot(preh) << std::endl;
+            // std::cout << "rotAngle" << std::endl;
+            // std::cout << rotAngle << std::endl;
 
             Eigen::Vector3d fv1Pos = mesh.vid2fv[fv1];
             Eigen::Vector3d fv2Pos = mesh.vid2fv[fv2];
@@ -1649,11 +1649,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 export_svg(window);
             }
             break;
-        // Add a cube
+        // import an object
         case  GLFW_KEY_1:
             if (action == GLFW_PRESS) {
-                glfwSetWindowTitle (window, "add a unit cube");
-                _3d_objs_buffer->add_cube(0, 0, 0);
+                glfwSetWindowTitle (window, "import an object");
+                _3d_objs_buffer->add_object(CUSTOM_OFF_PATH);
             }
             break;
         // Add a Cube from OFF
