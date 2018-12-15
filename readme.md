@@ -3,6 +3,35 @@
 ## Application functionality:
 Given a 3D model consists of triangle mesh in OFF format, output its paper model. It is able to export the paper model in SVG format and demonstrate the process of restoring the paper model to the 3D model.
 
+## Screenshots:
+
+### 1. Flatten
+<img src="pic/cube.png"/>
+<img src="pic/cone.png"/>
+<img src="pic/ball.png"/>
+<img src="pic/fox.png"/>
+<img src="pic/bunny.png"/>
+
+### 2. Customized Flattening Area
+<img src="pic/selected_cube.png"/>
+<img src="pic/selected_cone.png"/>
+<img src="pic/selected_ball.png"/>
+
+### 3. Restore Animation
+<img src="pic/gif/animation.gif"/>
+<img src="pic/gif/selected_animation.gif"/>
+
+### 4. Two sub-window Two camera
+<img src="pic/two-camera.png"/>
+
+## Contorl:
+- NUMBER KEY 1: Import customized input OFF file from path "*./data/input.off*".
+- NUMBER KEY 2-6: Import a cube/cone/ball/fox/bunny.
+- NUMBER KEY 0: Export SVG to path "*./build/ export.svg*".
+- SPACE: Play restore animation.
+- UP/DOWN/LEFT/RIGHT: Control camera
+- Mouse left click: Select mesh / select sub-window.
+
 ## Implementation details:
 
 ### 1. Flatten Algorithm
