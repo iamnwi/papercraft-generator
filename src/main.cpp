@@ -464,8 +464,8 @@ class Grid {
         Grid(double sizex = 0.03, double sizey = 0.03) {
             this->sizex = sizex; this->sizey = sizey;
         }
-        void addItem(Mesh &mesh) {
-            Eigen::MatrixXd boundingBox = get_bounding_box_2d(mesh.getFlatV());
+        void addItem(Mesh* mesh) {
+            Eigen::MatrixXd boundingBox = get_bounding_box_2d(mesh->getFlatV());
             double minx = boundingBox.col(0)(0), maxx = boundingBox.col(1)(0);
             double miny = boundingBox.col(0)(1), maxy = boundingBox.col(1)(1);
             double x = minx;
@@ -474,8 +474,8 @@ class Grid {
                 while (y < maxy+sizey) {
                     int r, c;
                     getCellIdx(x, y, r, c);
-                    if (std::find(rows[r][c].begin(), rows[r][c].end(), mesh.id) == rows[r][c].end())
-                        rows[r][c].push_back(mesh.id);
+                    if (std::find(rows[r][c].begin(), rows[r][c].end(), mesh->id) == rows[r][c].end())
+                        rows[r][c].push_back(mesh->id);
                     y += sizey;
                 }
                 x += sizex;
@@ -511,7 +511,7 @@ class Grid {
 };
 class FlattenObject {
     public:
-        std::map<int, Mesh> meshes;
+        std::map<int, Mesh*> meshes;
         std::map<std::pair<int, int>, std::vector<int>> edge2meshes;
         std::map<std::pair<int, int>, double> edge2weight;
         Grid* grid;
@@ -539,44 +539,44 @@ class FlattenObject {
             auto edge = v1 < v2? std::make_pair(v1, v2) : std::make_pair(v2, v1);
             for (int nebMeshId: edge2meshes[edge]) {
                 if (nebMeshId != meshId) {
-                    meshes[meshId].nebMeshes.push_back(std::make_pair(nebMeshId, edge));
+                    meshes[meshId]->nebMeshes.push_back(std::make_pair(nebMeshId, edge));
                 }
             }
         }
         bool flattenFirst(int meshId, std::set<int> &flatten) {
-            Mesh &mesh = meshes[meshId];
-            int v1 = mesh.vids[0], v2 = mesh.vids[1], v3 = mesh.vids[2];
-            double v1v2Len = (mesh.vid2v[v1] - mesh.vid2v[v2]).norm();
-            // mesh.vid2fv[v1] = Eigen::Vector3d(0., 0., 0.);
-            // mesh.vid2fv[v2] = Eigen::Vector3d(0., v1v2Len, 0.);
-            mesh.vid2fv[v1] = Eigen::Vector3d(0., 0., -1.);
-            mesh.vid2fv[v2] = Eigen::Vector3d(0., v1v2Len, -1.);
+            Mesh* mesh = meshes[meshId];
+            int v1 = mesh->vids[0], v2 = mesh->vids[1], v3 = mesh->vids[2];
+            double v1v2Len = (mesh->vid2v[v1] - mesh->vid2v[v2]).norm();
+            // mesh->vid2fv[v1] = Eigen::Vector3d(0., 0., 0.);
+            // mesh->vid2fv[v2] = Eigen::Vector3d(0., v1v2Len, 0.);
+            mesh->vid2fv[v1] = Eigen::Vector3d(0., 0., -1.);
+            mesh->vid2fv[v2] = Eigen::Vector3d(0., v1v2Len, -1.);
             Eigen::Vector3d flatPos;
-            if (!flattenVertex(meshId, v3, v1, v2, mesh.vid2fv[v1], mesh.vid2fv[v2], flatPos, flatten)) {
+            if (!flattenVertex(meshId, v3, v1, v2, mesh->vid2fv[v1], mesh->vid2fv[v2], flatPos, flatten)) {
                 return false;
             }
-            mesh.vid2fv[v3] = flatPos;
+            mesh->vid2fv[v3] = flatPos;
 
             // compute rotate angle
             double rotAngle = 0.;
 
-            Eigen::Vector3d fv1Pos = mesh.vid2fv[v1];
-            Eigen::Vector3d fv2Pos = mesh.vid2fv[v2];
+            Eigen::Vector3d fv1Pos = mesh->vid2fv[v1];
+            Eigen::Vector3d fv2Pos = mesh->vid2fv[v2];
             Eigen::Vector3d edgefA = fv1Pos, edgefB = fv2Pos;
-            Eigen::Vector3d edgeA = mesh.vid2v[v1], edgeB = mesh.vid2v[v2];
+            Eigen::Vector3d edgeA = mesh->vid2v[v1], edgeB = mesh->vid2v[v2];
             if (v2 < v1) {
-                edgeA = mesh.vid2v[v2]; edgeB = mesh.vid2v[v1];
+                edgeA = mesh->vid2v[v2]; edgeB = mesh->vid2v[v1];
                 edgefA = fv2Pos; edgefB = fv1Pos;
             }
             Eigen::Vector3d fRotAixs = (edgefA-edgefB).normalized();
 
-            mesh.R = get_rotate_mat(rotAngle, edgefA, edgefB);
-            mesh.edgeA = edgefA;
-            mesh.edgeB = edgefB;
-            mesh.rotEdge = std::make_pair(v1, v2);
-            mesh.rotAngle = rotAngle;
-            mesh.rotAixs = fRotAixs;
-            mesh.rotRad = 0.;
+            mesh->R = get_rotate_mat(rotAngle, edgefA, edgefB);
+            mesh->edgeA = edgefA;
+            mesh->edgeB = edgefB;
+            mesh->rotEdge = std::make_pair(v1, v2);
+            mesh->rotAngle = rotAngle;
+            mesh->rotAixs = fRotAixs;
+            mesh->rotRad = 0.;
 
             return true;
         }
@@ -594,7 +594,7 @@ class FlattenObject {
                 if (meshFlattened[i/3]) continue;
                 // std::cout << "ok id " << i/3 << std::endl;
                 int v1 = IDX(i), v2 = IDX(i+1), v3 = IDX(i+2);
-                meshes[meshId] = Mesh(meshId, V, v1, v2, v3, WHITE);
+                meshes[meshId] = new Mesh(meshId, V, v1, v2, v3, WHITE);
                 // add edge
                 addEdge(v1, v2, meshId);
                 addEdge(v2, v3, meshId);
@@ -608,8 +608,8 @@ class FlattenObject {
             // add edge field to mesh objects
             for (auto it: meshes) {
                 int meshId = it.first;
-                Mesh &mesh = it.second;
-                int v1 = mesh.vids[0], v2 = mesh.vids[1], v3 = mesh.vids[2];
+                Mesh* mesh = it.second;
+                int v1 = mesh->vids[0], v2 = mesh->vids[1], v3 = mesh->vids[2];
                 addNebMeshes(v1, v2, meshId);
                 addNebMeshes(v2, v3, meshId);
                 addNebMeshes(v1, v3, meshId);
@@ -640,13 +640,13 @@ class FlattenObject {
             while (!pq.empty()) {
                 auto node = pq.top();
                 pq.pop();
-                Mesh &curMesh = meshes[node.meshId];
-                for(auto meshNedge: curMesh.nebMeshes) {
+                Mesh* curMesh = meshes[node.meshId];
+                for(auto meshNedge: curMesh->nebMeshes) {
                     int nebMeshId = meshNedge.first;
                     auto edge = meshNedge.second;
                     if (flattened.find(nebMeshId) == flattened.end() && edge2weight[edge] > dist[nebMeshId]) {
                         dist[nebMeshId] = edge2weight[edge];
-                        pq.push(Node(edge2weight[edge], edge, curMesh.id, nebMeshId));
+                        pq.push(Node(edge2weight[edge], edge, curMesh->id, nebMeshId));
                     }
                 }
                 // pop out all meshes that is flatted or cannot be flatted in this island
@@ -658,16 +658,16 @@ class FlattenObject {
                     flattened.insert(node.meshId);
                     grid->addItem(meshes[node.meshId]);
                     // build MST node connections
-                    Mesh &curMesh = meshes[node.meshId];
-                    Mesh &preMesh = meshes[node.parentMeshId];
-                    curMesh.parent = &preMesh;
-                    preMesh.childs.push_back(&curMesh);
+                    Mesh* curMesh = meshes[node.meshId];
+                    Mesh* preMesh = meshes[node.parentMeshId];
+                    curMesh->parent = preMesh;
+                    preMesh->childs.push_back(curMesh);
                 }
             }
 
             for (int meshId: flattened) {
                 meshFlattened[meshId] = true;
-                Eigen::Matrix3d flatV = meshes[meshId].getFlatV();
+                Eigen::Matrix3d flatV = meshes[meshId]->getFlatV();
                 this->fV.conservativeResize(4, fV.cols()+3);
                 int last = this->fV.cols();
                 this->fV.col(last-3) = to_4_point(flatV.col(0));
@@ -688,26 +688,26 @@ class FlattenObject {
             this->barycenter = Eigen::Vector4d(0.0, 0.0, 0.0, 1.0);
 
             // check tree
-            Mesh* root = &meshes.begin()->second;
-            std::queue<Mesh*> q;
-            q.push(root);
-            while (!q.empty()) {
-                Mesh* cur = q.front();
-                q.pop();
-                for (Mesh* child: cur->childs) {
-                    q.push(child);
-                }
-            }
+            // Mesh* root = meshes.begin()->second;
+            // std::queue<Mesh*> q;
+            // q.push(root);
+            // while (!q.empty()) {
+            //     Mesh* cur = q.front();
+            //     q.pop();
+            //     for (Mesh* child: cur->childs) {
+            //         q.push(child);
+            //     }
+            // }
         }
         
         bool flattenMesh(int preMeshId, int meshId, std::pair<int, int> edge, std::set<int> &flattened) {
             // find the remaining non-flattened vertex
             // std::cout << "enter flattenMesh" << std::endl;
-            Mesh &preMesh = meshes[preMeshId];
-            Mesh &mesh = meshes[meshId];
+            Mesh* preMesh = meshes[preMeshId];
+            Mesh* mesh = meshes[meshId];
             int fv1 = edge.first, fv2 = edge.second;
             int v3;
-            for (int vid: mesh.vids) {
+            for (int vid: mesh->vids) {
                 if (vid != fv1 && vid != fv2) {
                     v3 = vid;
                     break;
@@ -716,17 +716,17 @@ class FlattenObject {
 
             // flatten the remaining vertex v3 according to the flat position of v1 and v2
             Eigen::Vector3d fv3Pos;
-            if (!flattenVertex(meshId, v3, fv1, fv2, preMesh.vid2fv[fv1], preMesh.vid2fv[fv2], fv3Pos, flattened))
+            if (!flattenVertex(meshId, v3, fv1, fv2, preMesh->vid2fv[fv1], preMesh->vid2fv[fv2], fv3Pos, flattened))
                 return false;
 
             // get flat v1 and flat v2 from pre Mesh
-            mesh.vid2fv[fv1] = preMesh.vid2fv[fv1];
-            mesh.vid2fv[fv2] = preMesh.vid2fv[fv2];
-            mesh.vid2fv[v3] = fv3Pos;
+            mesh->vid2fv[fv1] = preMesh->vid2fv[fv1];
+            mesh->vid2fv[fv2] = preMesh->vid2fv[fv2];
+            mesh->vid2fv[v3] = fv3Pos;
 
             // compute rotate angle
-            Eigen::Vector3d curh = mesh.getH(edge).normalized();
-            Eigen::Vector3d preh = preMesh.getH(edge).normalized();
+            Eigen::Vector3d curh = mesh->getH(edge).normalized();
+            Eigen::Vector3d preh = preMesh->getH(edge).normalized();
             double rotAngle = 180. - acos(curh.dot(preh)) * 180.0/PI;
             double rotRad = PI-acos(curh.dot(preh));
             double rotDot = -curh.dot(preh);
@@ -736,12 +736,12 @@ class FlattenObject {
             // std::cout << "rotAngle" << std::endl;
             // std::cout << rotAngle << std::endl;
 
-            Eigen::Vector3d fv1Pos = mesh.vid2fv[fv1];
-            Eigen::Vector3d fv2Pos = mesh.vid2fv[fv2];
+            Eigen::Vector3d fv1Pos = mesh->vid2fv[fv1];
+            Eigen::Vector3d fv2Pos = mesh->vid2fv[fv2];
             Eigen::Vector3d edgefA = fv1Pos, edgefB = fv2Pos;
-            Eigen::Vector3d edgeA = mesh.vid2v[fv1], edgeB = mesh.vid2v[fv2];;
+            Eigen::Vector3d edgeA = mesh->vid2v[fv1], edgeB = mesh->vid2v[fv2];;
             if (fv2 < fv1) {
-                edgeA = mesh.vid2v[fv2]; edgeB = mesh.vid2v[fv1];
+                edgeA = mesh->vid2v[fv2]; edgeB = mesh->vid2v[fv1];
             }
             Eigen::Vector3d fRotAixs = (edgefA-edgefB).normalized();
             Eigen::Vector3d rotAixs = (edgeA-edgeB).normalized();
@@ -751,15 +751,15 @@ class FlattenObject {
                 rotSign = -1;
             }
 
-            mesh.R = get_rotate_mat(rotAngle, edgefA, edgefB);
-            mesh.edgeA = edgefA;
-            mesh.edgeB = edgefB;
-            mesh.rotEdge = std::make_pair(fv1, fv2);
-            mesh.rotAngle = rotAngle;
-            mesh.rotRad = rotRad;
-            mesh.rotAixs = fRotAixs;
-            mesh.rotSign = rotSign;
-            mesh.rotDot = rotDot;
+            mesh->R = get_rotate_mat(rotAngle, edgefA, edgefB);
+            mesh->edgeA = edgefA;
+            mesh->edgeB = edgefB;
+            mesh->rotEdge = std::make_pair(fv1, fv2);
+            mesh->rotAngle = rotAngle;
+            mesh->rotRad = rotRad;
+            mesh->rotAixs = fRotAixs;
+            mesh->rotSign = rotSign;
+            mesh->rotDot = rotDot;
 
             // std::cout << rotAngle << std::endl;
 
@@ -769,12 +769,12 @@ class FlattenObject {
         // compute the flat position of v3 according to the flat position of v1 and v2
         // check overlap
         bool flattenVertex(int meshId, int v3, int v1, int v2, Eigen::Vector3d fv1Pos, Eigen::Vector3d fv2Pos, Eigen::Vector3d &fv3Pos, std::set<int> &flattened) {
-            Mesh &mesh = meshes[meshId];
+            Mesh* mesh = meshes[meshId];
             Eigen::Vector3d flat1, flat2;
             
             // use get H to compute fH
-            Eigen::Vector3d aixs = (mesh.vid2v[v1]-mesh.vid2v[v2]).normalized();
-            Eigen::Vector3d vec = mesh.vid2v[v3]-mesh.vid2v[v2];
+            Eigen::Vector3d aixs = (mesh->vid2v[v1]-mesh->vid2v[v2]).normalized();
+            Eigen::Vector3d vec = mesh->vid2v[v3]-mesh->vid2v[v2];
             double len = vec.dot(aixs);
             Eigen::Vector3d parallel = len*aixs;
             Eigen::Vector3d hvec = vec-parallel;
@@ -805,7 +805,7 @@ class FlattenObject {
             // get all near meshes and combine them to one vector
             std::set<int> nearMeshes = grid->getNearMeshes(flatPos, fv1Pos, fv2Pos);
             for (int meshId: nearMeshes) {
-                Eigen::Matrix3d meshfV = meshes[meshId].getFlatV();
+                Eigen::Matrix3d meshfV = meshes[meshId]->getFlatV();
                 if (isInside(flatPos, meshfV)) return true;
                 Eigen::Vector3d center = (flatPos+fv1Pos+fv2Pos)/3.;
                 if (isInside(center, meshfV)) return true;
@@ -827,12 +827,12 @@ class FlattenObject {
             return false;
         }
         bool lineCross(Eigen::Vector3d a, Eigen::Vector3d b, int meshId) {
-            Mesh &mesh = meshes[meshId];
+            Mesh* mesh = meshes[meshId];
             int ov1, ov2, ov3;
-            ov1 = mesh.vids[0]; ov2 = mesh.vids[1]; ov3 = mesh.vids[2];
-            if (lineCross(a, b, mesh.vid2fv[ov1], mesh.vid2fv[ov2])) return true;
-            if (lineCross(a, b, mesh.vid2fv[ov2], mesh.vid2fv[ov3])) return true;
-            if (lineCross(a, b, mesh.vid2fv[ov1], mesh.vid2fv[ov3])) return true;
+            ov1 = mesh->vids[0]; ov2 = mesh->vids[1]; ov3 = mesh->vids[2];
+            if (lineCross(a, b, mesh->vid2fv[ov1], mesh->vid2fv[ov2])) return true;
+            if (lineCross(a, b, mesh->vid2fv[ov2], mesh->vid2fv[ov3])) return true;
+            if (lineCross(a, b, mesh->vid2fv[ov1], mesh->vid2fv[ov3])) return true;
             return false;
         }
         bool lineCross(Eigen::Vector3d a, Eigen::Vector3d b, Eigen::Vector3d c, Eigen::Vector3d d) {
@@ -1210,6 +1210,23 @@ class _3dObject {
             int flattedCnt = 0;
             while (flattedCnt < selectedIDX.rows()/3) {
                 this->flattenObjs.push_back(FlattenObject(this->V, selectedIDX, meshFlattened));
+                // check tree
+                std::cout << "check tree in 3d object flatten" << std::endl;
+                for (FlattenObject& flatObj: this->flattenObjs) {
+                    Mesh* root = flatObj.meshes.begin()->second;
+                    std::queue<Mesh*> q;
+                    q.push(root);
+                    std::cout << "tree" << std::endl;
+                    while (!q.empty()) {
+                        Mesh* cur = q.front();
+                        q.pop();
+                        std::cout << cur->id << std::endl;
+                        for (Mesh* child: cur->childs) {
+                            q.push(child);
+                        }
+                    }
+                }
+
                 flattedCnt = 0;
                 for (int i = 0; i < meshFlattened.size(); i++) {
                     flattedCnt += meshFlattened[i];
@@ -1455,8 +1472,11 @@ class Player {
         std::queue<Mesh*> waitlist;
 
         void init(_3dObject* obj3d) {
-            FlattenObject& flatObj = obj3d->flattenObjs[0];
-            waitlist.push(&flatObj.meshes.begin()->second);
+            // FlattenObject& flatObj = obj3d->flattenObjs[0];
+            // waitlist.push(flatObj.meshes.begin()->second);
+            for (FlattenObject &flatObj: obj3d->flattenObjs) {
+                waitlist.push(flatObj.meshes.begin()->second);
+            }
             frames = 10.;
             // frames = 1.;
             frame = 0;
@@ -2035,8 +2055,8 @@ int main(void)
                 for (int i = 0; i < flatObj.fV.cols(); i += 3) {
                     // get animation model matrix
                     int meshId = flatObj.idx2meshId[i];
-                    Mesh &mesh = flatObj.meshes[meshId];
-                    Eigen::Matrix4d AnimateT = mesh.animeM;
+                    Mesh* mesh = flatObj.meshes[meshId];
+                    Eigen::Matrix4d AnimateT = mesh->animeM;
                     // std::cout << "AnimateT" << std::endl;
                     // std::cout << AnimateT << std::endl;
                     glUniformMatrix4fv(program.uniform("AnimateT"), 1, GL_FALSE, m_to_float(AnimateT).data());
