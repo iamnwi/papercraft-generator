@@ -27,7 +27,7 @@ Given a 3D model consists of triangle mesh in OFF format, output its paper model
 ## Contorl:
 - NUMBER KEY 1: Import customized input OFF file from path "*./data/input.off*".
 - NUMBER KEY 2-6: Import a cube/cone/ball/fox/bunny.
-- NUMBER KEY 0: Export SVG to path "*./build/ export.svg*".
+- NUMBER KEY 0: Export SVG to path "*./build/export.svg*".
 - SPACE: Play restore animation.
 - UP/DOWN/LEFT/RIGHT: Control camera
 - Mouse left click: Select mesh / select sub-window.
