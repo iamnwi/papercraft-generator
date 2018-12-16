@@ -39,7 +39,7 @@ While flattening the 3D model, I am working on minimizing the perimeter(yellow l
 
 - **Maximum spanning forest(Prime algorithm)**
 
-    <img src="pic/cone_msf.png"/>
+    <img src="pic/cone_msf.png" style="width:300px"/>
 
     For the purpose of maximizing the internal edges(red lines), used Prime spanning tree algorithm to compute a maximum spanning forest of a graph *G* which construct from the given 3D model. Vertices of *G* are faces of the 3D model. If two faces are adjacent, they create an edge in graph *G*, and the weight of this edge is the length of their shared edge of the 3D model.
 
@@ -56,7 +56,7 @@ While flattening a mesh of the 3D model, we have to check whether the it will ov
 
     For simplifying this process, I look up all the grid cells which the bounding box of *M* touches.
 
-    <img src="pic/grid.png"/>
+    <img src="pic/grid.png" style="width:300px"/>
 
 - **Checking routine**
 
@@ -85,7 +85,7 @@ Considering that users may feel confused about restoring the 3D model from a pap
     
     Record the flatten angle and the rotate axis of every mesh while flattening them. With this information, we could restore a mesh.
 
-    <img src="pic/dihedral-angle.png"/>
+    <img src="pic/dihedral-angle.png" style="width:300px"/>
 
     1. Restore the related position of every vertex by traversing the maximum spanning forest(MSF).
 
