@@ -58,14 +58,6 @@ bool drag = false;
 double hit_dist;
 Eigen::Vector4d pre_cursor_point;
 
-class Light {
-    public:
-        Eigen::Vector4d position;
-        Eigen::Vector3d intensity; // default (1,1,1)
-        Light(Eigen::Vector4d position, Eigen::Vector3d intensity = Eigen::Vector3d(1,1,1)) {
-            this->position = position; this->intensity = intensity;
-        }
-};
 class Camera {
     public:
         Eigen::Matrix4d flatViewMat;
@@ -212,105 +204,6 @@ class Camera {
         Eigen::Matrix4d get_project_mat() {
             if (this->project_mode == ORTHO) return this->ortho_mat;
             return this->perspect_mat;
-        }
-};
-class RayTracer {
-    public:
-        std::vector<Light*> lights;
-        void add_light(Eigen::Vector4d position) {
-            this->lights.push_back(new Light(position));
-        }
-        Eigen::Vector3d get_diffuse_color(Eigen::Vector4d vpos, Eigen::Vector4d meshNormals, Eigen::Vector3d color, Eigen::MatrixXd ModelMat) {
-            auto light = this->lights[0];
-            // ambinet
-            double ambientStrength = 0.01;
-            Eigen::Vector3d ambient = ambientStrength * light->intensity;
-            //diffuse
-            Eigen::Matrix3d diffuse_mat;
-            diffuse_mat <<  color(0), 0, 0,
-                            0, color(1), 0,
-                            0, 0, color(2);
-            // Eigen::Matrix4d normalMatrix = (ModelMat.inverse()).transpose();
-            // Eigen::Vector4d normal = (normalMatrix * meshNormals).normalized();
-            Eigen::Vector4d normal = meshNormals;
-            Eigen::Vector4d surfaceToLight = light->position - vpos;
-            // double brightness = normal.dot(surfaceToLight) / (surfaceToLight.norm() * surfaceToLight.norm());
-            double brightness = normal.dot(surfaceToLight);
-            brightness = fmax(brightness, 0.);
-            Eigen::Vector3d diffuse = diffuse_mat * light->intensity * brightness;
-            Eigen::Vector3d result = ambient + diffuse;
-            return result;
-        }
-};
-class BezierCurve {
-    public:
-        Eigen::MatrixXd V;
-        VertexArrayObject VAO;
-        VertexBufferObject VBO_P;
-
-        Eigen::MatrixXd curve_points;
-        VertexArrayObject VAO_C;
-        VertexBufferObject VBO_CP;
-
-        int nxt_curve_pt;
-        bool anime_finish;
-
-        BezierCurve() {
-            this->V.resize(4, 0);
-            // Create a VAO
-            this->VAO.init();
-            this->VAO.bind();
-            // Initialize the VBO with the vertices data
-            this->VBO_P.init();
-
-            this->curve_points.resize(4, 0);
-            // Create a VAO
-            this->VAO_C.init();
-            this->VAO_C.bind();
-            // Initialize the VBO with the vertices data
-            this->VBO_CP.init();
-
-            nxt_curve_pt = 0;
-            anime_finish = true;
-        }
-        void insert_point(double x, double y, double z) {
-            // this->control_points.push_back(new Circle(x, y, z));
-            this->V.conservativeResize(V.rows(), V.cols()+1);
-            this->V.col(V.cols()-1) << x, y, z, 1.;
-            this->VBO_P.update(m_to_float(this->V));
-            this->update_BP();
-        }
-        void update_BP() {
-            if (this->V.cols() <= 0) return;
-            double delta = 0.01;
-            int line_amount = 1/delta;
-            this->curve_points.resize(curve_points.rows(), line_amount+1);
-            for (int i = 0; i <= line_amount; i += 1) {
-                double t = i*delta;
-                Eigen::Vector4d p = get_BP_at(t);
-                this->curve_points.col(i) << Eigen::Vector4d(p(0), p(1), p(2), 1.);
-                // this->curve_points.col(i) << p;
-            }
-            this->VBO_CP.update(m_to_float(this->curve_points));
-        }
-        Eigen::Vector4d get_BP_at(double t) {
-            Eigen::MatrixXd CP = this->V;
-            return get_BP(t, CP, CP.cols());
-        }
-        Eigen::Vector4d get_BP(double t, Eigen::MatrixXd CP, int n) {
-            if (n == 1) return CP.col(0);
-            for (int i = 0; i < n-1; i++) {
-                CP.col(i) = (1-t)*CP.col(i) + t*CP.col(i+1);
-            }
-            return get_BP(t, CP, n-1);
-        }
-        bool translate(Eigen::Vector4d delta, int point_idx) {
-            if (point_idx >= this->V.cols()) return false;
-            this->V.col(point_idx) += delta;
-            // this->control_points[point_idx]->translate(delta(0), delta(1), delta(2));
-            this->VBO_P.update(m_to_float(this->V));
-            this->update_BP();
-            return true;
         }
 };
 class Mesh {
@@ -869,34 +762,6 @@ class FlattenObject {
 
             return x(0)-0. > ESP && x(1)-0. > ESP && x(2)-0. > ESP;
         }
-        bool hit(Eigen::Vector4d ray_origin, Eigen::Vector4d ray_direction, double &dist) {
-            bool intersected = false;
-            // // for (int meshId : this->meshes) {
-            //     // Eigen::Vector4d intersection;
-            //     // Eigen::MatrixXd mesh_fV(4,3);
-            //     // Eigen::Matrix3d fVmat3 = mesh->getFlatV();
-            //     // mesh_fV << 
-            //     //     fVmat3.row(0),
-            //     //     fVmat3.row(1),
-            //     //     fVmat3.row(2),
-            //     //     1, 1, 1;
-            // for (int i = 0; i < this->fV.cols(); i += 3) {
-            //     Eigen::MatrixXd mesh_fV(4,3);
-            //     mesh_fV << 
-            //         this->fV.col(0),
-            //         this->fV.col(1),
-            //         this->fV.col(2),
-            //         1, 1, 1;
-            //     mesh_fV = this->ModelMat*mesh_fV;
-
-            //     if (mesh->getIntersection(ray_origin, ray_direction, intersection, mesh_fV)) {
-            //         intersected = true;
-            //         if (intersection == ray_origin) dist = 0;
-            //         else dist = std::fmin((intersection-ray_origin).norm(), dist);
-            //     }
-            // }
-            return intersected;
-        }
         void translate(Eigen::Vector4d delta) {
             Eigen::MatrixXd T = Eigen::MatrixXd::Identity(4, 4);
             T.col(3)(0) = delta(0); T.col(3)(1) = delta(1); T.col(3)(2) = delta(2);
@@ -984,7 +849,6 @@ class _3dObject {
 
         int render_mode;
         double r, s, tx, ty;
-        BezierCurve* bc;
         // FlattenObject* flattenObj;
         std::vector<FlattenObject> flattenObjs;
         std::set<int> selectedMeshes;
@@ -1080,8 +944,6 @@ class _3dObject {
                 this->Normals.col(i) = normal.normalized();
             }
             this->VBO_N.update(m_to_float(this->Normals));
-
-            bc = new BezierCurve();
 
             std::cout << "meshes # = " << this->meshes.size() << std::endl;
             std::cout << "finish" << std::endl;
@@ -1295,56 +1157,17 @@ class _3dObject {
             flatObj.translate(Eigen::Vector4d(delta(0), delta(1), 0., 0.));
         }
 };
-class Cube: public _3dObject {
-    public:
-        Eigen::Vector4d center;
-        Cube(int color_idx, double x, double y, double z, double len = 1.0):_3dObject() {
-            std::cout << "enter initialization" << std::endl;
-            this->center = Eigen::Vector4d(x, y, z, 1);
-            Eigen::Vector4d HB = Eigen::Vector4d(-len, len, len, 0);
-            Eigen::Vector4d EC = Eigen::Vector4d(len, len, len, 0);
-            Eigen::Vector4d GA = Eigen::Vector4d(-len, len, -len, 0);
-            Eigen::Vector4d FD = Eigen::Vector4d(len, len, -len, 0);
-            Eigen::Vector4d A = center+0.5*GA, G = center-0.5*GA;
-            Eigen::Vector4d B = center+0.5*HB, H = center-0.5*HB;
-            Eigen::Vector4d C = center+0.5*EC, E = center-0.5*EC;
-            Eigen::Vector4d D = center+0.5*FD, F = center-0.5*FD;
-            // 6 faces, 12 Meshs
-            Eigen::MatrixXd V(4, 8);
-            V << A, B, C, D, E, F, G, H;
-            Eigen::VectorXi IDX(36);
-            IDX << 0,1,2, 2,3,0, 4,6,5, 6,4,7, 0,5,1, 5,0,4, 1,6,2, 1,5,6, 3,2,6, 6,7,3, 3,7,0, 7,4,0;
-            Eigen::MatrixXd Color(3, 8);
-            Eigen::Vector3i color = colors[color_idx];
-            for (int i = 0; i < 8; i++) {
-                Color.col(i) = color.cast<double>();
-            }
-            std::cout << "ready to generate Meshs" << std::endl;
-            // bounding box
-            Eigen::MatrixXd box(4, 2);
-            box << x-len/2.0, x+len/2.0, y-len/2.0, y+len/2.0, z-len/2.0, z+len/2.0, 1, 1;
-            this->initial(V, Color, IDX, box);
-        }
-};
 class _3dObjectBuffer {
     public:
         std::vector<_3dObject*> _3d_objs;
         _3dObject* selected_obj;
         FlattenObject* selected_flat_obj;
-        RayTracer* ray_tracer;
         int color_idx;
 
         _3dObjectBuffer() {
             selected_obj = nullptr;
             selected_flat_obj = nullptr;
-            ray_tracer = new RayTracer();
-            ray_tracer->add_light(Eigen::Vector4d(0.0, 0.0, 1, 1.0));
             color_idx = 0;
-        }
-        void add_cube(double x, double y, double z, double len=1.0) {
-            this->color_idx = (this->color_idx)%colors.size();
-            this->color_idx++;
-            _3d_objs.push_back(new Cube(this->color_idx, x, y, z, len));
         }
         void add_object(std::string off_path) {
             this->color_idx = (this->color_idx)%colors.size();
@@ -1363,20 +1186,6 @@ class _3dObjectBuffer {
                         if (selected == nullptr || min_dist > dist) {
                             min_dist = dist;
                             selected = obj;
-                        }
-                    }
-                }
-            }
-            else if (subWindow == RIGHTSUBWINDOW) {
-                // find the hitted flat object if any
-                for (auto obj: _3d_objs) {
-                    double dist = DIST_MAX;
-                    for (auto &flatObj: obj->flattenObjs) {
-                        if (flatObj.hit(ray_origin, ray_direction, dist)) {
-                            if (selected_flat == nullptr || min_dist > dist) {
-                                min_dist = dist;
-                                selected_flat = &flatObj;
-                            }
                         }
                     }
                 }
@@ -1473,12 +1282,10 @@ class Player {
 
         void init(_3dObject* obj3d) {
             // FlattenObject& flatObj = obj3d->flattenObjs[0];
-            // waitlist.push(flatObj.meshes.begin()->second);
             for (FlattenObject &flatObj: obj3d->flattenObjs) {
                 waitlist.push(flatObj.meshes.begin()->second);
             }
             frames = 10.;
-            // frames = 1.;
             frame = 0;
             playing = true;
         }
