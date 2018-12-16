@@ -35,11 +35,13 @@ Given a 3D model consists of triangle mesh in OFF format, output its paper model
 ## Implementation details:
 
 ### 1. Flatten Algorithm
-While flattening the 3D model, I am working on minimizing the perimeter of the paper model so that the user can cut as less as possible.
+While flattening the 3D model, I am working on minimizing the perimeter(yellow lines) of the paper model so that the user can cut as less as possible.
 
 - **Maximum spanning forest(Prime algorithm)**
 
-    Used Prime spanning tree algorithm to compute a maximum spanning forest of a graph *G* which construct from the given 3D model. Vertices of *G* are faces of the 3D model. If two faces are adjacent, they create an edge in graph *G*, and the weight of this edge is the length of their shared edge of the 3D model.
+    <img src="pic/cone_msf.png"/>
+
+    For the purpose of maximizing the internal edges(red lines), used Prime spanning tree algorithm to compute a maximum spanning forest of a graph *G* which construct from the given 3D model. Vertices of *G* are faces of the 3D model. If two faces are adjacent, they create an edge in graph *G*, and the weight of this edge is the length of their shared edge of the 3D model.
 
     Starts from a unflattened face, let it be the root of a subtree. Keep adding new faces into this subtree according prime algorithm until no more unflattened faces can be added into this subtree due to the overlap restriction.
 
@@ -53,6 +55,8 @@ While flattening a mesh of the 3D model, we have to check whether the it will ov
     Given a flattened mesh *M*, with this data structure, we could quickly find out all near meshes by looking up all the grid cells which *M* touches, then pull out all the flattened meshes which associated to those grid cells.
 
     For simplifying this process, I look up all the grid cells which the bounding box of *M* touches.
+
+    <img src="pic/grid.png"/>
 
 - **Checking routine**
 
@@ -80,6 +84,8 @@ Considering that users may feel confused about restoring the 3D model from a pap
 - **Algorithm for restoring animation**
     
     Record the flatten angle and the rotate axis of every mesh while flattening them. With this information, we could restore a mesh.
+
+    <img src="pic/dihedral-angle.png"/>
 
     1. Restore the related position of every vertex by traversing the maximum spanning forest(MSF).
 
