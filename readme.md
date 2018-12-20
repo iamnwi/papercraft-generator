@@ -1,4 +1,4 @@
-# Assignment 4: Final Project[![Build Status](https://travis-ci.com/NYUGraphics/final-project-iamnwi.svg?token=mK1JygKbSRwpqpg5DuvP&branch=master)](https://travis-ci.com/NYUGraphics/assignment1-iamnwi)
+# Papercraft Generator [![Build Status](https://travis-ci.com/NYUGraphics/final-project-iamnwi.svg?token=mK1JygKbSRwpqpg5DuvP&branch=master)](https://travis-ci.com/NYUGraphics/assignment1-iamnwi)
 
 ## Application functionality:
 Given a 3D model consists of triangle mesh in OFF format, output its paper model. It is able to export the paper model in SVG format and demonstrate the process of restoring the paper model to the 3D model.
