@@ -798,9 +798,9 @@ class FlattenObject {
             std::stringstream ss;
             for (int i = 0; i < this->fV.cols(); i += 3) {
                 Eigen::MatrixXd mesh_fV(4, 3);
-                mesh_fV.col(0) = to_4_point(fV.col(i));
-                mesh_fV.col(1) = to_4_point(fV.col(i+1));
-                mesh_fV.col(2) = to_4_point(fV.col(i+2));
+                mesh_fV.col(0) = fV.col(i);
+                mesh_fV.col(1) = fV.col(i+1);
+                mesh_fV.col(2) = fV.col(i+2);
                 
                 mesh_fV = camera->get_project_mat()*camera->flatViewMat*ModelMat*mesh_fV;
 
@@ -1367,7 +1367,7 @@ void export_svg(GLFWwindow* window) {
     svg_str = replace_all(svg_str, "$TG", flat_svg_str);
     // Save svg to file
     std::ofstream svg_file;
-    svg_file.open ("export.svg");
+    svg_file.open (EXPORT_PATH);
     svg_file << svg_str;
     svg_file.close();
 }
